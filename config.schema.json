@@ -1,0 +1,85 @@
+{
+  "pluginAlias": "SamsungRacLocal",
+  "pluginType": "platform",
+  "singular": true,
+  "customUi": true,
+  "headerDisplay": "Controls a Samsung room air conditioner over its local network API. Add each unit's IP address below, then pair it from the card above — pairing needs the unit powered off and back on, so it cannot be done from this form alone.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "devices": {
+        "title": "Air conditioners",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string",
+              "description": "Shown in the Home app. Leave empty to use the name the unit reports."
+            },
+            "host": {
+              "title": "IP address",
+              "type": "string",
+              "required": true,
+              "format": "ipv4",
+              "description": "The unit's address on your network. Give it a fixed DHCP lease on your router — the plugin cannot follow it if it moves."
+            },
+            "token": {
+              "title": "Device token (optional)",
+              "type": "string",
+              "description": "Only needed if you paired outside this plugin. Leave empty and use Pair above; tokens paired there are stored outside config.json."
+            }
+          }
+        }
+      },
+      "updateInterval": {
+        "title": "Status poll interval (seconds)",
+        "type": "integer",
+        "default": 10,
+        "minimum": 5,
+        "description": "How often to read the unit. This is a local network request, so it can be frequent."
+      },
+      "swingDirection": {
+        "title": "Swing direction",
+        "type": "string",
+        "default": "Up_And_Low",
+        "oneOf": [
+          { "title": "Up and down (confirmed working)", "enum": ["Up_And_Low"] },
+          { "title": "All directions", "enum": ["All"] },
+          { "title": "Vertical", "enum": ["Vertical"] },
+          { "title": "Swing up/down", "enum": ["SwingUD"] }
+        ],
+        "description": "What to set the vane to when swing is switched on in HomeKit. On a TP6X_RAC_16K only Up_And_Low works: Vertical and SwingUD are rejected outright, and All is accepted and then ignored. The others are kept for units that differ; the log says if yours refuses the one you pick."
+      },
+      "requestTimeout": {
+        "title": "Request timeout (seconds)",
+        "type": "integer",
+        "default": 5,
+        "minimum": 1
+      },
+      "certificateUrl": {
+        "title": "Client certificate URL",
+        "type": "string",
+        "description": "Advanced. Where to download the Samsung client certificate from. Change this only if you mirror it yourself."
+      }
+    }
+  },
+  "layout": [
+    {
+      "key": "devices",
+      "type": "array",
+      "buttonText": "Add an air conditioner",
+      "items": ["devices[].name", "devices[].host", "devices[].token"]
+    },
+    "updateInterval",
+    "swingDirection",
+    {
+      "type": "fieldset",
+      "title": "Advanced",
+      "expandable": true,
+      "expanded": false,
+      "items": ["requestTimeout", "certificateUrl"]
+    }
+  ]
+}

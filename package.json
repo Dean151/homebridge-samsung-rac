@@ -1,0 +1,60 @@
+{
+  "displayName": "Homebridge Samsung RAC",
+  "name": "homebridge-samsung-rac",
+  "version": "0.1.0",
+  "description": "Control a Samsung room air conditioner from HomeKit over its local LAN API, including the vane/swing control the SmartThings cloud cannot reach.",
+  "license": "Apache-2.0",
+  "author": "Thomas Durand",
+  "main": "dist/index.js",
+  "bin": {
+    "homebridge-samsung-rac-probe": "dist/cli/probe.js"
+  },
+  "engines": {
+    "node": "^20 || ^22 || ^24 || ^26",
+    "homebridge": "^1.8.0 || ^2.0.0"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "homebridge",
+    "homekit",
+    "samsung",
+    "air-conditioner",
+    "climate",
+    "local"
+  ],
+  "files": [
+    "dist",
+    "homebridge-ui/public",
+    "homebridge-ui/server.js",
+    "config.schema.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsc -p tsconfig.json",
+    "watch": "npm run build && npm link && nodemon",
+    "lint": "eslint src tests",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "probe": "ts-node src/cli/probe.ts",
+    "prepublishOnly": "npm run lint && npm test && npm run build"
+  },
+  "dependencies": {
+    "@homebridge/plugin-ui-utils": "^1.0.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.9.0",
+    "eslint": "^9.13.0",
+    "homebridge": "^1.8.5",
+    "jest": "^29.7.0",
+    "nock": "^13.5.6",
+    "nodemon": "^3.1.7",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.12.2"
+  }
+}

@@ -1,0 +1,392 @@
+<style>
+  #rac { margin-bottom: 1rem; }
+
+  #rac .rac-card {
+    background: linear-gradient(135deg, #1f4f82 0%, #3f8fd0 100%);
+    border-radius: 0.5rem;
+    color: #fff;
+    padding: 1.25rem 1.5rem;
+    position: relative;
+  }
+  #rac .rac-card h4 { margin: 0 0 0.35rem; font-size: 1.05rem; }
+  #rac .rac-card p { margin: 0; opacity: 0.9; font-size: 0.85rem; }
+  #rac .rac-icon { font-size: 1.6rem; opacity: 0.8; position: absolute; right: 1.5rem; top: 1.4rem; }
+
+  #rac .rac-badge {
+    border-radius: 1rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-left: 0.4rem;
+    padding: 0.15rem 0.6rem;
+    vertical-align: middle;
+  }
+  #rac .rac-badge-ok { background: #1e7e34; color: #fff; }
+  #rac .rac-badge-warn { background: #e0a800; color: #212529; }
+  #rac .rac-badge-off { background: rgba(0, 0, 0, 0.35); color: #fff; }
+
+  #rac .rac-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.9rem; }
+
+  #rac .rac-device {
+    align-items: center;
+    border-top: 1px solid rgba(128, 128, 128, 0.25);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: space-between;
+    padding: 0.7rem 0;
+  }
+  #rac .rac-device:first-child { border-top: none; }
+  #rac .rac-device-host { font-weight: 600; }
+  #rac .rac-device-detail { display: block; font-size: 0.78rem; opacity: 0.7; }
+
+  #rac .rac-steps { margin: 0 0 0.75rem 1rem; padding: 0; font-size: 0.87rem; }
+  #rac .rac-steps li { margin-bottom: 0.25rem; }
+  #rac .rac-log {
+    background: rgba(128, 128, 128, 0.12);
+    border-radius: 0.3rem;
+    font-family: monospace;
+    font-size: 0.75rem;
+    max-height: 9rem;
+    overflow-y: auto;
+    padding: 0.5rem 0.65rem;
+    white-space: pre-wrap;
+  }
+</style>
+
+<div id="rac">
+  <div class="rac-card">
+    <i class="fas fa-snowflake rac-icon"></i>
+    <h4>Samsung air conditioner <span id="rac-cert-badge" class="rac-badge rac-badge-off">Checking…</span></h4>
+    <p id="rac-cert-text">Reading the local setup…</p>
+    <div id="rac-cert-actions" class="rac-actions"></div>
+  </div>
+
+  <div id="rac-devices" class="card mt-3" style="display: none">
+    <div class="card-header">Your air conditioners</div>
+    <div id="rac-device-list" class="card-body py-1"></div>
+  </div>
+
+  <div id="rac-wizard" class="card mt-3" style="display: none">
+    <div class="card-header">Pair <span id="rac-wizard-host"></span></div>
+    <div class="card-body">
+      <p class="mb-2">
+        The air conditioner does not hand out a token on request — it calls back to this machine
+        the moment it powers on. So the order matters:
+      </p>
+      <ol class="rac-steps">
+        <li>Power the air conditioner <strong>off</strong> (remote or plug).</li>
+        <li>Press <strong>Start pairing</strong> below.</li>
+        <li>When asked, power it back <strong>on</strong>.</li>
+      </ol>
+      <div id="rac-wizard-log" class="rac-log" style="display: none"></div>
+      <p class="text-muted mt-2 mb-0" style="font-size: 0.78rem">
+        If Homebridge runs in a container without host networking, the callback cannot reach it.
+        Run <code>npx homebridge-samsung-rac-probe pair --host &lt;ip&gt;</code> on the host instead and
+        paste the token below.
+      </p>
+    </div>
+    <div class="card-footer d-flex justify-content-end" style="gap: 0.5rem">
+      <button id="rac-wizard-close" type="button" class="btn btn-outline-secondary">Close</button>
+      <button id="rac-wizard-start" type="button" class="btn btn-primary">Start pairing</button>
+    </div>
+  </div>
+
+  <div id="rac-manual" class="card mt-3" style="display: none">
+    <div class="card-header">Paste a token for <span id="rac-manual-host"></span></div>
+    <div class="card-body">
+      <input id="rac-manual-token" type="text" class="form-control" placeholder="Device token" autocomplete="off" />
+      <small class="form-text text-muted">Stored outside config.json, next to the certificate.</small>
+    </div>
+    <div class="card-footer d-flex justify-content-end" style="gap: 0.5rem">
+      <button id="rac-manual-cancel" type="button" class="btn btn-outline-secondary">Cancel</button>
+      <button id="rac-manual-save" type="button" class="btn btn-primary">Save token</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (async () => {
+    const TITLE = 'Samsung RAC';
+
+    const certBadge = document.getElementById('rac-cert-badge');
+    const certText = document.getElementById('rac-cert-text');
+    const certActions = document.getElementById('rac-cert-actions');
+    const devicesCard = document.getElementById('rac-devices');
+    const deviceList = document.getElementById('rac-device-list');
+    const wizard = document.getElementById('rac-wizard');
+    const wizardHost = document.getElementById('rac-wizard-host');
+    const wizardLog = document.getElementById('rac-wizard-log');
+    const wizardStart = document.getElementById('rac-wizard-start');
+    const manual = document.getElementById('rac-manual');
+    const manualHost = document.getElementById('rac-manual-host');
+    const manualToken = document.getElementById('rac-manual-token');
+
+    let pairingHost = null;
+    let manualTarget = null;
+
+    // The form below is editable while this card is on screen, so never cache
+    // the config — read it back at the moment it is needed.
+    async function currentConfig() {
+      const configs = await homebridge.getPluginConfig();
+      return configs[0] || {};
+    }
+
+    async function hosts() {
+      const config = await currentConfig();
+      return (config.devices || [])
+        .map((device) => (device && device.host ? String(device.host).trim() : ''))
+        .filter(Boolean);
+    }
+
+    function button(label, className, onClick) {
+      const element = document.createElement('button');
+      element.type = 'button';
+      element.className = className;
+      element.innerHTML = label;
+      element.addEventListener('click', onClick);
+      return element;
+    }
+
+    function badge(element, label, kind) {
+      element.textContent = label;
+      element.className = `rac-badge rac-badge-${kind}`;
+    }
+
+    function log(message) {
+      wizardLog.style.display = '';
+      wizardLog.textContent += `${message}\n`;
+      wizardLog.scrollTop = wizardLog.scrollHeight;
+    }
+
+    function render(status) {
+      certActions.innerHTML = '';
+
+      if (!status.certificate.stored) {
+        badge(certBadge, 'Certificate needed', 'warn');
+        certText.textContent = 'The Samsung client certificate is not on this machine yet. It is downloaded '
+          + 'once and kept locally — it is never stored in your config.';
+        certActions.appendChild(
+          button('<i class="fas fa-download"></i> Fetch certificate', 'btn btn-light font-weight-bold', fetchCertificate),
+        );
+      } else {
+        const paired = status.devices.filter((device) => device.paired).length;
+        if (!status.devices.length) {
+          badge(certBadge, 'Add a unit', 'warn');
+          certText.textContent = 'Certificate ready. Add your air conditioner\'s IP address in the form below and '
+            + 'save, then pair it here.';
+        } else if (paired === status.devices.length) {
+          badge(certBadge, 'Ready', 'ok');
+          certText.textContent = `Certificate ready and ${paired} of ${status.devices.length} unit(s) paired.`;
+        } else {
+          badge(certBadge, 'Pairing needed', 'warn');
+          certText.textContent = `Certificate ready. ${status.devices.length - paired} unit(s) still need pairing.`;
+        }
+        certActions.appendChild(
+          button('<i class="fas fa-redo"></i> Re-fetch certificate', 'btn btn-link text-white', fetchCertificate),
+        );
+      }
+
+      deviceList.innerHTML = '';
+      devicesCard.style.display = status.devices.length ? '' : 'none';
+
+      for (const device of status.devices) {
+        const row = document.createElement('div');
+        row.className = 'rac-device';
+
+        const left = document.createElement('div');
+        const title = document.createElement('span');
+        title.className = 'rac-device-host';
+        title.textContent = device.host;
+        left.appendChild(title);
+
+        const detail = document.createElement('span');
+        detail.className = 'rac-device-detail';
+        detail.textContent = device.paired
+          ? `Paired${device.model ? ` · ${device.model}` : ''}${device.pairedAt ? ` · ${new Date(device.pairedAt).toLocaleDateString()}` : ''}`
+          : 'Not paired yet';
+        left.appendChild(detail);
+        row.appendChild(left);
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '0.4rem';
+
+        if (device.paired) {
+          actions.appendChild(button('Test', 'btn btn-sm btn-outline-primary', () => testDevice(device.host)));
+          actions.appendChild(button('Re-pair', 'btn btn-sm btn-outline-secondary', () => openWizard(device.host)));
+          actions.appendChild(button('Forget', 'btn btn-sm btn-link text-danger', () => forget(device.host)));
+        } else {
+          actions.appendChild(button('Pair', 'btn btn-sm btn-primary', () => openWizard(device.host)));
+          actions.appendChild(button('Paste token', 'btn btn-sm btn-link', () => openManual(device.host)));
+        }
+
+        row.appendChild(actions);
+        deviceList.appendChild(row);
+      }
+
+      homebridge.fixScrollHeight();
+    }
+
+    async function refresh() {
+      const config = await currentConfig();
+      const status = await homebridge.request('/status', {
+        hosts: await hosts(),
+        certificateUrl: config.certificateUrl,
+      });
+      render(status);
+      return status;
+    }
+
+    async function fetchCertificate() {
+      const config = await currentConfig();
+      homebridge.showSpinner();
+      try {
+        const result = await homebridge.request('/certificate/fetch', { certificateUrl: config.certificateUrl });
+        homebridge.toast.success(`Certificate stored at ${result.path}`, TITLE);
+        await refresh();
+      } catch (error) {
+        homebridge.toast.error(error.message, TITLE);
+      } finally {
+        homebridge.hideSpinner();
+      }
+    }
+
+    async function testDevice(host) {
+      const config = await currentConfig();
+      homebridge.showSpinner();
+      try {
+        const device = await homebridge.request('/device/test', { host, certificateUrl: config.certificateUrl });
+        homebridge.toast.success(
+          `${device.model || 'Air conditioner'} answered, currently ${device.power || 'unknown'}.`, TITLE,
+        );
+      } catch (error) {
+        homebridge.toast.error(error.message, TITLE);
+      } finally {
+        homebridge.hideSpinner();
+      }
+    }
+
+    async function forget(host) {
+      if (!window.confirm(`Forget the stored token for ${host}? You will have to pair it again.`)) {
+        return;
+      }
+      homebridge.showSpinner();
+      try {
+        await homebridge.request('/token/forget', { host });
+        await refresh();
+        homebridge.toast.success('Token removed.', TITLE);
+      } catch (error) {
+        homebridge.toast.error(error.message, TITLE);
+      } finally {
+        homebridge.hideSpinner();
+      }
+    }
+
+    function openWizard(host) {
+      pairingHost = host;
+      wizardHost.textContent = host;
+      wizardLog.textContent = '';
+      wizardLog.style.display = 'none';
+      wizardStart.disabled = false;
+      wizardStart.textContent = 'Start pairing';
+      manual.style.display = 'none';
+      wizard.style.display = '';
+      homebridge.fixScrollHeight();
+    }
+
+    function closeWizard() {
+      wizard.style.display = 'none';
+      pairingHost = null;
+      homebridge.fixScrollHeight();
+    }
+
+    function openManual(host) {
+      manualTarget = host;
+      manualHost.textContent = host;
+      manualToken.value = '';
+      wizard.style.display = 'none';
+      manual.style.display = '';
+      homebridge.fixScrollHeight();
+      manualToken.focus();
+    }
+
+    async function startPairing() {
+      const host = pairingHost;
+      const config = await currentConfig();
+
+      wizardStart.disabled = true;
+      wizardStart.textContent = 'Pairing…';
+      log('Starting. Make sure the unit is powered off.');
+      homebridge.showSpinner();
+
+      try {
+        const result = await homebridge.request('/pair/start', { host, certificateUrl: config.certificateUrl });
+        homebridge.toast.success(`Paired with ${result.model || host}.`, TITLE);
+        closeWizard();
+        await refresh();
+      } catch (error) {
+        log(`Failed: ${error.message}`);
+        homebridge.toast.error(error.message, TITLE);
+        wizardStart.disabled = false;
+        wizardStart.textContent = 'Try again';
+      } finally {
+        homebridge.hideSpinner();
+      }
+    }
+
+    async function saveManualToken() {
+      homebridge.showSpinner();
+      try {
+        await homebridge.request('/token/set', { host: manualTarget, token: manualToken.value });
+        manual.style.display = 'none';
+        await refresh();
+        homebridge.toast.success('Token saved.', TITLE);
+      } catch (error) {
+        homebridge.toast.error(error.message, TITLE);
+      } finally {
+        homebridge.hideSpinner();
+      }
+    }
+
+    // Pairing takes minutes and depends on the user power cycling the unit, so
+    // the server streams what it is waiting for rather than leaving a spinner.
+    homebridge.addEventListener('pair-progress', (event) => {
+      const progress = event.data;
+      log(`[${progress.stage}] ${progress.message}`);
+      if (progress.stage === 'waiting') {
+        homebridge.toast.info('Now power the air conditioner ON.', TITLE);
+      }
+    });
+
+    wizardStart.addEventListener('click', startPairing);
+    document.getElementById('rac-wizard-close').addEventListener('click', async () => {
+      await homebridge.request('/pair/cancel').catch(() => undefined);
+      closeWizard();
+    });
+    document.getElementById('rac-manual-cancel').addEventListener('click', () => {
+      manual.style.display = 'none';
+      homebridge.fixScrollHeight();
+    });
+    document.getElementById('rac-manual-save').addEventListener('click', saveManualToken);
+    manualToken.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        saveManualToken();
+      }
+    });
+
+    // Adding a unit in the form below must show up here without reopening settings.
+    homebridge.addEventListener('configChanged', () => {
+      refresh().catch(() => undefined);
+    });
+
+    homebridge.showSchemaForm();
+
+    try {
+      await refresh();
+    } catch (error) {
+      badge(certBadge, 'Error', 'warn');
+      certText.textContent = error.message;
+    }
+  })();
+</script>

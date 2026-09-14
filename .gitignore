@@ -1,0 +1,33 @@
+# Never commit the transport credentials.
+#
+# ac14k_m.pem bundles a PRIVATE KEY. It is publicly known, but vendoring a private
+# key into a repo is a bad habit and secret scanners will flag it. Fetch it at
+# setup time instead.
+ac14k_m.pem
+*.pem
+*.p12
+*.pfx
+*.key
+
+# The DeviceToken grants full local control of the AC. Config or env only.
+DEVICE_TOKEN.txt
+*.local
+*.local.*
+.env
+.env.*
+
+# Captured during the token pairing ritual; may contain the token in the clear.
+token_capture.log
+ac_devices.json
+
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Working notes and hardware findings: local only, by choice. notes/HANDOFF.md
+# records how this air conditioner behaves and why the local transport was
+# chosen; notes/WRITE-SUPPORT.md is the probe's report on which writes it honours.
+# Neither was ever published to npm - package.json "files" excludes them.
+notes/
