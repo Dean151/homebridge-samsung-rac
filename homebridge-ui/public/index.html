@@ -182,7 +182,7 @@
           certText.textContent = `Certificate ready. ${status.devices.length - paired} unit(s) still need pairing.`;
         }
         certActions.appendChild(
-          button('<i class="fas fa-redo"></i> Re-fetch certificate', 'btn btn-link text-white', fetchCertificate),
+          button('<i class="fas fa-rotate-right"></i> Re-fetch certificate', 'btn btn-link text-white', fetchCertificate),
         );
       }
 
@@ -379,6 +379,15 @@
     homebridge.addEventListener('configChanged', () => {
       refresh().catch(() => undefined);
     });
+
+    // The Homebridge UI hides the schema form until the plugin already has a
+    // config block, so on a fresh install there would be nowhere to type an IP
+    // address — and no way out of that, since typing one is what creates the
+    // block. Seed an empty block first; the UI fills in the platform alias and
+    // nothing reaches config.json until the user saves.
+    if (!(await homebridge.getPluginConfig()).length) {
+      await homebridge.updatePluginConfig([{}]);
+    }
 
     homebridge.showSchemaForm();
 
