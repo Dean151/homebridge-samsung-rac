@@ -1,5 +1,7 @@
 # homebridge-samsung-rac
 
+[![CI](https://github.com/Dean151/homebridge-samsung-rac/actions/workflows/ci.yml/badge.svg)](https://github.com/Dean151/homebridge-samsung-rac/actions/workflows/ci.yml)
+
 HomeKit control for a Samsung room air conditioner that stays **entirely on your
 own network**. The plugin talks to the unit's own API — `https://<ip>:8888`, mutual
 TLS — and, once the one-time certificate download in step 2 below is done, to
