@@ -28,6 +28,8 @@ interface Change {
 }
 
 export interface DeviceAdapterOptions {
+  /** How the unit is named in the log; defaults to its address. */
+  label?: string;
   /** How long a status read stays fresh enough to reuse. */
   cacheMs?: number;
   /** Past this, a cached status is not served at all and the caller sees the error. */
@@ -47,6 +49,9 @@ export class DeviceAdapter {
   private lastWrite: { key: string; at: number } | null = null;
   private warnedFields = new Set<string>();
 
+  /** The first raw document is logged whole; after that only what changed is. */
+  private loggedRawDocument = false;
+
   /**
    * Writes run one at a time, chained rather than dropped: a HomeKit scene
    * fires Active, mode and temperature together, and dropping the overlap
@@ -59,6 +64,7 @@ export class DeviceAdapter {
   private readonly settleMs: number;
   private readonly dedupMs: number;
   private readonly minWriteIntervalMs: number;
+  private readonly label: string;
 
   constructor(
     private readonly api: LocalApi,
@@ -71,6 +77,7 @@ export class DeviceAdapter {
     this.settleMs = options.settleMs ?? 1500;
     this.dedupMs = options.dedupMs ?? 1000;
     this.minWriteIntervalMs = options.minWriteIntervalMs ?? 250;
+    this.label = options.label ?? api.description;
   }
 
   // --- reads ---------------------------------------------------------------
@@ -90,7 +97,16 @@ export class DeviceAdapter {
         throw new Error(`${this.api.description} reported no device with id ${this.deviceId}.`);
       }
 
-      this.cached = toRacStatus(device);
+      if (!this.loggedRawDocument) {
+        // Once, in full: everything this plugin decides is derived from this
+        // document, so a bug report is only actionable with it in hand.
+        this.loggedRawDocument = true;
+        this.log.debug(`${this.label} raw device document: ${JSON.stringify(device)}`);
+      }
+
+      const status = toRacStatus(device);
+      this.logStatusChange(status);
+      this.cached = status;
       this.cachedAt = now;
       return this.cached;
     } catch (error) {
@@ -199,6 +215,8 @@ export class DeviceAdapter {
       await delay(this.minWriteIntervalMs - sinceLastWrite);
     }
 
+    this.log.debug(`${this.label} writing ${change.field} = ${format(change.requested)}`);
+
     try {
       await this.api.put(change.resource, change.body);
     } finally {
@@ -217,10 +235,36 @@ export class DeviceAdapter {
     if (!applied) {
       this.reportRejected(change, actual, status);
     } else {
+      this.log.debug(`${this.label} confirmed ${change.field} = ${format(actual)}.`);
       this.warnedFields.delete(change.field);
     }
 
     return { applied, requested: change.requested, actual, status };
+  }
+
+  /**
+   * Poll-by-poll noise is useless; a line per actual change is a usable history
+   * of what the unit did, including changes made from the remote or the app.
+   */
+  private logStatusChange(next: RacStatus): void {
+    const previous = this.cached;
+    if (!previous) {
+      this.log.debug(`${this.label} status: ${describe(next)}`);
+      return;
+    }
+
+    const changes: string[] = [];
+    for (const field of trackedFields) {
+      const before = previous[field];
+      const after = next[field];
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        changes.push(`${field} ${format(before)} -> ${format(after)}`);
+      }
+    }
+
+    if (changes.length) {
+      this.log.debug(`${this.label} changed: ${changes.join(', ')}`);
+    }
   }
 
   private reportRejected(change: Change, actual: unknown, status: RacStatus): void {
@@ -247,6 +291,20 @@ export class DeviceAdapter {
       + 'Samsung app.',
     );
   }
+}
+
+/** The fields worth a log line when they move; the rest never change in practice. */
+const trackedFields = [
+  'active', 'mode', 'currentTemperature', 'targetTemperature',
+  'speedLevel', 'windDirection', 'filterAlarm', 'connected',
+] as const satisfies readonly (keyof RacStatus)[];
+
+function format(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value) ?? String(value);
+}
+
+function describe(status: RacStatus): string {
+  return trackedFields.map((field) => `${field}=${format(status[field])}`).join(' ');
 }
 
 function delay(ms: number): Promise<void> {

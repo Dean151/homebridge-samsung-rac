@@ -359,6 +359,39 @@ describe('SamsungRacAccessory', () => {
       expect(heaterCooler.findCharacteristic(Characteristic.Active)?.getHandler?.())
         .toBe(Characteristic.Active.ACTIVE);
     });
+
+    it('warns once for an outage and announces the recovery', async () => {
+      const status = { ...baseStatus };
+      const log = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+      let fail = true;
+      const getStatus = jest.fn(async () => {
+        if (fail) {
+          throw new Error('ETIMEDOUT');
+        }
+        return status;
+      });
+
+      await SamsungRacAccessory.create(
+        {
+          Service, Characteristic, log,
+          api: { hap: { HapStatusError: FakeHapStatusError, HAPStatus } },
+          settings: { updateInterval: 3600, swingDirection: 'Up_And_Low' },
+        } as never,
+        new FakeAccessory() as never,
+        { getStatus, close: jest.fn() } as never,
+      );
+
+      // The read in initialize() failed: one warning, and no repeat while the
+      // unit stays away.
+      expect(log.warn).toHaveBeenCalledTimes(1);
+      expect(log.warn.mock.calls[0].join(' ')).toContain('not responding');
+      await pollOnce(getStatus);
+      expect(log.warn).toHaveBeenCalledTimes(1);
+
+      fail = false;
+      await pollOnce(getStatus);
+      expect(log.info.mock.calls.map((call) => call.join(' ')).join('\n')).toContain('responding again');
+    });
   });
 
   describe('power', () => {

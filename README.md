@@ -1,14 +1,25 @@
 # homebridge-samsung-rac
 
-Control a Samsung room air conditioner from HomeKit over its **local network API**
-(`https://<ip>:8888`, mutual TLS) instead of the SmartThings cloud.
+HomeKit control for a Samsung room air conditioner that stays **entirely on your
+own network**. The plugin talks to the unit's own API — `https://<ip>:8888`, mutual
+TLS — and, once the one-time certificate download in step 2 below is done, to
+nothing else: no SmartThings account, no OAuth token to keep alive, no cloud round
+trip between the Home app and the machine in your room. It keeps working when your
+internet does not, and it answers in the time a LAN request takes rather than
+whatever a cloud API is doing today.
 
-The local API is richer than the cloud one. Most importantly it exposes the vane
-position — `Wind.direction` — which the SmartThings API does not expose at all,
-and which is the reason this plugin exists.
+Being local is also what makes the vane work. The unit publishes its vane
+position directly as `Wind.direction`, so swing is read and written as a first
+class control instead of depending on which capabilities a given model exposes to
+the cloud — on the reference unit, the cloud integration could not reach it at all.
 
 Developed against a **TP6X_RAC_16K** (SmartThings vendor id `DA-AC-RAC-100001`).
 Other units of the same generation should work; older port-2878 models will not.
+
+Your Homebridge machine has to be on the same network as the air conditioner. If
+it is not — or you would rather not pair against the hardware — the cloud route is
+[homebridge-samsung-windfree-ac](https://github.com/igorxmath/homebridge-samsung-windfree-ac),
+which drives the same class of unit through SmartThings.
 
 ## What it exposes
 
@@ -65,6 +76,38 @@ the callback has to be able to reach Homebridge:
 - **A firewall on the Homebridge machine** — allow inbound TCP on port 8889.
 - **A listener left over from an earlier attempt** — it keeps the port and the
   next run fails in a way that looks identical to the unit never calling back.
+
+## Debug logs
+
+Run Homebridge with `-D` (or tick *Debug Mode* in the UI) and this plugin traces
+everything it does with the unit:
+
+```
+[Samsung RAC] Configured with 1 unit(s), polling every 10s, 5000ms timeout, swing direction 'Up_And_Low'.
+[Samsung RAC] Lounge raw device document: {"id":"0","uuid":"…","Wind":{"direction":"Fix",…}}
+[Samsung RAC] 10.0.0.9:8888 > GET /devices
+[Samsung RAC] 10.0.0.9:8888 < 200 GET /devices in 41ms (1888 bytes)
+[Samsung RAC] Lounge changed: active false -> true, currentTemperature 23 -> 22
+[Samsung RAC] Lounge: HomeKit asked for swing on, sending direction 'Up_And_Low'.
+[Samsung RAC] Lounge writing Wind.direction = Up_And_Low
+[Samsung RAC] 10.0.0.9:8888 > PUT /devices/0/wind {"Wind":{"direction":"Up_And_Low"}}
+[Samsung RAC] Lounge confirmed Wind.direction = Up_And_Low.
+```
+
+What each kind of line is for:
+
+| Line | Tells you |
+|---|---|
+| `raw device document` | The whole document, once per start. The first thing to attach to a bug report. |
+| `> ` / `< ` / `x ` | Request, answer, failure — with timings. Poll responses are summarised by size; writes and anything non-2xx are printed in full. |
+| `changed:` | One line per real change, including changes made from the remote or the Samsung app. Silence means the unit reported the same thing again. |
+| `HomeKit asked for …` | What the Home app requested and what the plugin decided to send — the place to look when a tap does the wrong thing. |
+| `confirmed` / `accepted a write and did not apply it` | Whether the read-back proved the change landed. |
+
+Two things are logged without `-D`, because they matter at normal volume: a unit
+that stops answering is warned about **once** per outage (`not responding`) and
+announced when it comes back (`responding again`), and a write the unit accepts
+and silently discards is warned about once per field.
 
 ## Probe CLI
 

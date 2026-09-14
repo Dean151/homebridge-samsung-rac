@@ -55,6 +55,45 @@ function build(options: DeviceAdapterOptions = {}): Harness {
   };
 }
 
+describe('debug logging', () => {
+  const lines = (log: { debug: jest.Mock }) => log.debug.mock.calls.map((call) => call.join(' '));
+
+  it('dumps the raw device document once, not on every poll', async () => {
+    const { adapter, log } = build();
+
+    await adapter.getStatus();
+    await adapter.getStatus();
+
+    expect(lines(log).filter((line) => line.includes('raw device document'))).toHaveLength(1);
+  });
+
+  it('logs what changed between two reads, and nothing when nothing did', async () => {
+    const { adapter, log, document } = build();
+
+    await adapter.getStatus();
+    log.debug.mockClear();
+
+    await adapter.getStatus();
+    expect(lines(log).filter((line) => line.includes('changed:'))).toHaveLength(0);
+
+    document.Operation = { power: 'Off' };
+    document.Temperatures = [{ id: '0', current: 22, desired: 24, minimum: 16, maximum: 30 }];
+    await adapter.getStatus();
+
+    const changed = lines(log).find((line) => line.includes('changed:'));
+    expect(changed).toContain('active true -> false');
+    expect(changed).toContain('currentTemperature 23 -> 22');
+  });
+
+  it('names the unit the way the log does', async () => {
+    const { adapter, log } = build({ label: 'Living room AC' });
+
+    await adapter.getStatus();
+
+    expect(lines(log).some((line) => line.startsWith('Living room AC'))).toBe(true);
+  });
+});
+
 describe('reads', () => {
   it('parses the device the unit reports', async () => {
     const { adapter } = build();

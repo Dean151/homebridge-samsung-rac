@@ -33,6 +33,9 @@ export class SamsungRacAccessory {
    */
   private responsive = false;
 
+  /** Warn once per outage, not once per poll. */
+  private loggedOffline = false;
+
   /** Guards adoptLateCapabilities() against initialize()'s own first read. */
   private configured = false;
 
@@ -440,11 +443,17 @@ export class SamsungRacAccessory {
   // --- writes --------------------------------------------------------------
 
   private async setActive(value: CharacteristicValue): Promise<void> {
-    await this.apply(() => this.adapter.setPower(value === this.platform.Characteristic.Active.ACTIVE));
+    const on = value === this.platform.Characteristic.Active.ACTIVE;
+    this.platform.log.debug(`${this.accessory.displayName}: HomeKit asked for power ${on ? 'on' : 'off'}.`);
+    await this.apply(() => this.adapter.setPower(on));
   }
 
   private async setTargetState(value: CharacteristicValue): Promise<void> {
     const mode = this.toDeviceMode(value);
+    this.platform.log.debug(
+      `${this.accessory.displayName}: HomeKit asked for target state ${value} `
+      + `(mode ${mode === null ? 'unchanged' : `'${mode}'`}).`,
+    );
     if (mode === null) {
       // The unit is in a mode we represent as AUTO (dry or wind). Sending
       // 'Auto' would kick it out of a mode the user chose in the Samsung app.
@@ -482,14 +491,21 @@ export class SamsungRacAccessory {
 
   private async setTargetTemperature(value: CharacteristicValue): Promise<void> {
     const temperature = Math.round(clamp(value as number, this.minTemp, this.maxTemp, this.minTemp));
+    this.platform.log.debug(
+      `${this.accessory.displayName}: HomeKit asked for ${value}°C, sending ${temperature}°C.`,
+    );
     await this.apply(() => this.adapter.setTargetTemperature(temperature, this.status.temperatureId));
   }
 
   private async setRotationSpeed(value: CharacteristicValue): Promise<void> {
     if (this.speedStep === 0) {
+      this.platform.log.debug(`${this.accessory.displayName}: ignoring a fan speed write; no fan reading.`);
       return;
     }
     const level = Math.max(0, Math.min(this.maxSpeedLevel, Math.round((value as number) / this.speedStep)));
+    this.platform.log.debug(
+      `${this.accessory.displayName}: HomeKit asked for ${value}% fan, sending level ${level}/${this.maxSpeedLevel}.`,
+    );
     await this.apply(() => this.adapter.setSpeedLevel(level));
   }
 
@@ -497,6 +513,11 @@ export class SamsungRacAccessory {
     const direction = value === this.platform.Characteristic.SwingMode.SWING_ENABLED
       ? this.platform.settings.swingDirection
       : swingOffDirection;
+    this.platform.log.debug(
+      `${this.accessory.displayName}: HomeKit asked for swing `
+      + `${value === this.platform.Characteristic.SwingMode.SWING_ENABLED ? 'on' : 'off'}, `
+      + `sending direction '${direction}'.`,
+    );
     await this.apply(() => this.adapter.setWindDirection(direction));
   }
 
@@ -511,11 +532,11 @@ export class SamsungRacAccessory {
     try {
       const result = await write();
       this.status = result.status;
-      this.responsive = true;
+      this.markResponsive();
       this.adoptLateCapabilities();
       this.push();
     } catch (error) {
-      this.platform.log.error(`${this.accessory.displayName}: ${messageOf(error)}`);
+      this.platform.log.error(`${this.accessory.displayName}: write failed: ${messageOf(error)}`);
       // Let the next poll decide whether the unit is really gone.
       await this.updateStatus();
     }
@@ -526,13 +547,39 @@ export class SamsungRacAccessory {
   private async updateStatus(): Promise<void> {
     try {
       this.status = await this.adapter.getStatus();
-      this.responsive = true;
+      this.markResponsive();
       this.adoptLateCapabilities();
       this.push();
     } catch (error) {
-      this.responsive = false;
-      this.platform.log.debug(`${this.accessory.displayName}: status read failed: ${messageOf(error)}`);
+      this.markUnresponsive(messageOf(error));
     }
+  }
+
+  /**
+   * An outage is worth one warn and one info when it clears — enough to see in
+   * a normal log that a unit dropped out overnight, without a line per poll.
+   */
+  private markResponsive(): void {
+    if (!this.responsive && this.loggedOffline) {
+      this.platform.log.info(`${this.accessory.displayName}: responding again.`);
+    }
+    this.responsive = true;
+    this.loggedOffline = false;
+  }
+
+  private markUnresponsive(reason: string): void {
+    this.responsive = false;
+
+    if (this.loggedOffline) {
+      this.platform.log.debug(`${this.accessory.displayName}: still not responding: ${reason}`);
+      return;
+    }
+
+    this.loggedOffline = true;
+    this.platform.log.warn(
+      `${this.accessory.displayName}: not responding (${reason}). `
+      + 'HomeKit will show "No Response" until it answers again.',
+    );
   }
 
   /**

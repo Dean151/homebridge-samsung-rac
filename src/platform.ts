@@ -40,13 +40,27 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     this.certificates = new CertificateStore({ storagePath, url: this.settings.certificateUrl });
     this.tokens = new TokenStore(storagePath);
 
+    this.log.debug(
+      `Configured with ${this.settings.devices.length} unit(s), polling every `
+      + `${this.settings.updateInterval}s, ${this.settings.requestTimeoutMs}ms timeout, swing direction `
+      + `'${this.settings.swingDirection}'. Storage: ${storagePath}.`,
+    );
+
     this.api.on('didFinishLaunching', () => {
-      void this.discoverDevices();
+      // Nothing above catches for us here: an unhandled rejection out of
+      // discovery would take the whole Homebridge process down with it.
+      this.discoverDevices().catch((error) => {
+        this.log.error(`Device discovery failed: ${messageOf(error)}`);
+      });
     });
 
     this.api.on('shutdown', () => {
       for (const handler of this.handlers) {
-        handler.stop();
+        try {
+          handler.stop();
+        } catch (error) {
+          this.log.debug(`Error while shutting down an accessory: ${messageOf(error)}`);
+        }
       }
     });
   }
@@ -65,6 +79,7 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     let pem: Buffer;
     try {
       pem = await this.certificates.load();
+      this.log.debug(`Using the client certificate at ${this.certificates.path}.`);
     } catch (error) {
       this.log.error(
         `Cannot load the Samsung client certificate: ${messageOf(error)} `
@@ -89,11 +104,14 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
         continue;
       }
 
+      this.log.debug(`Using a ${device.token ? 'config.json' : 'paired'} token for ${device.host}.`);
+
       const api = new LocalApi({
         host: device.host,
         pem,
         token,
         timeoutMs: this.settings.requestTimeoutMs,
+        log: this.log,
       });
 
       let documents: RacDeviceDocument[];
@@ -117,9 +135,20 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
         continue;
       }
 
+      this.log.debug(`${device.host} reported ${documents.length} device(s).`);
+
       for (const document of documents) {
-        const uuid = await this.registerDevice(device.host, document, api, documents.length > 1);
-        liveUuids.add(uuid);
+        // One unit failing to set up must not abort discovery for the rest, and
+        // must not escape as an unhandled rejection either.
+        try {
+          liveUuids.add(await this.registerDevice(device.host, document, api, documents.length > 1));
+        } catch (error) {
+          allReachable = false;
+          this.log.error(
+            `Could not set up the accessory for ${device.host} (device ${document.id ?? '0'}): `
+            + `${messageOf(error)}`,
+          );
+        }
       }
     }
 
@@ -156,7 +185,7 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     const accessory = existing ?? new this.api.platformAccessory(displayName, uuid);
     accessory.context = { ...accessory.context, ...context };
 
-    const adapter = new DeviceAdapter(api, deviceId, this.log);
+    const adapter = new DeviceAdapter(api, deviceId, this.log, { label: displayName });
 
     // Populate before HomeKit ever sees the accessory, so its first look
     // already has real values rather than placeholders.

@@ -2,7 +2,7 @@
   "displayName": "Homebridge Samsung RAC",
   "name": "homebridge-samsung-rac",
   "version": "0.1.1",
-  "description": "Control a Samsung room air conditioner from HomeKit over its local LAN API, including the vane/swing control the SmartThings cloud cannot reach.",
+  "description": "Local-network HomeKit control for Samsung room air conditioners: no SmartThings account and no cloud, with direct vane/swing control.",
   "license": "Apache-2.0",
   "author": "Thomas Durand",
   "funding": {

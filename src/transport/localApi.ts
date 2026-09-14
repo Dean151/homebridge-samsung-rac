@@ -1,3 +1,4 @@
+import type { Logging } from 'homebridge';
 import { DEVICE_API_PORT } from '../settings';
 import { HttpTransport, tlsTransport } from './httpOverTls';
 import { describeTlsError } from './tls';
@@ -25,6 +26,12 @@ export interface LocalApiOptions {
   timeoutMs?: number;
   /** Swappable so the request/response handling can be tested without hardware. */
   transport?: HttpTransport;
+  /**
+   * Optional: when given, every request is traced at debug level. This is the
+   * bottom of the stack, so it is the only place that can show what actually
+   * went over the wire when a unit misbehaves.
+   */
+  log?: Logging;
 }
 
 export interface RawResponse {
@@ -38,6 +45,7 @@ export class LocalApi {
   private readonly timeoutMs: number;
   private readonly pem: Buffer;
   private readonly transport: HttpTransport;
+  private readonly log?: Logging;
   private token?: string;
 
   constructor(options: LocalApiOptions) {
@@ -47,6 +55,7 @@ export class LocalApi {
     this.token = options.token;
     this.pem = options.pem;
     this.transport = options.transport ?? tlsTransport;
+    this.log = options.log;
   }
 
   setToken(token: string | undefined): void {
@@ -129,6 +138,11 @@ export class LocalApi {
       headers['Content-Length'] = String(Buffer.byteLength(payload));
     }
 
+    const started = Date.now();
+    this.log?.debug(
+      `${this.description} > ${method} ${path}${payload === undefined ? '' : ` ${payload}`}`,
+    );
+
     try {
       const response = await this.transport({
         host: this.host,
@@ -140,8 +154,21 @@ export class LocalApi {
         timeoutMs: this.timeoutMs,
         pem: this.pem,
       });
+
+      // A successful GET /devices body is several kilobytes of JSON every poll,
+      // so it is summarised here and the interesting part — what changed — is
+      // logged by the adapter instead. Anything unexpected is shown in full.
+      const interesting = method !== 'GET' || response.status < 200 || response.status >= 300;
+      const body = interesting ? ` ${response.body}` : ` (${Buffer.byteLength(response.body)} bytes)`;
+      this.log?.debug(
+        `${this.description} < ${response.status} ${method} ${path} in ${Date.now() - started}ms${body}`,
+      );
+
       return { status: response.status, body: response.body };
     } catch (error) {
+      this.log?.debug(
+        `${this.description} x ${method} ${path} after ${Date.now() - started}ms: ${(error as Error).message}`,
+      );
       const tlsMessage = describeTlsError(error, this.description);
       if (tlsMessage) {
         throw new LocalApiError(tlsMessage);

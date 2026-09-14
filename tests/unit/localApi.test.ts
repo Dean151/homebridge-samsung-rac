@@ -31,6 +31,52 @@ function build(reply: Partial<HttpResponse> | Error, token: string | null = 'tes
   return { api, sent };
 }
 
+describe('LocalApi tracing', () => {
+  function traced(reply: Partial<HttpResponse> | Error) {
+    const log = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const api = new LocalApi({
+      host: '10.0.0.9',
+      pem,
+      token: 'test-token',
+      timeoutMs: 500,
+      log: log as never,
+      transport: async () => {
+        if (reply instanceof Error) {
+          throw reply;
+        }
+        return { status: 200, headers: {}, body: '', ...reply };
+      },
+    });
+    return { api, lines: () => log.debug.mock.calls.map((call) => call.join(' ')) };
+  }
+
+  it('summarises a polled GET body instead of printing kilobytes of JSON', async () => {
+    const { api, lines } = traced({ body: '{"Devices":[]}' });
+
+    await api.get('/devices');
+
+    expect(lines()[0]).toContain('10.0.0.9:8888 > GET /devices');
+    expect(lines()[1]).toMatch(/< 200 GET \/devices in \d+ms \(14 bytes\)/);
+  });
+
+  it('prints a write and its answer in full', async () => {
+    const { api, lines } = traced({ body: '{"ok":true}' });
+
+    await api.put('/devices/0/wind', { Wind: { direction: 'Up_And_Low' } });
+
+    expect(lines()[0]).toContain('> PUT /devices/0/wind {"Wind":{"direction":"Up_And_Low"}}');
+    expect(lines()[1]).toContain('{"ok":true}');
+  });
+
+  it('traces a failure with the underlying reason', async () => {
+    const { api, lines } = traced(new Error('ETIMEDOUT'));
+
+    await expect(api.get('/devices')).rejects.toThrow(UnreachableError);
+    expect(lines()[1]).toContain('x GET /devices after');
+    expect(lines()[1]).toContain('ETIMEDOUT');
+  });
+});
+
 describe('LocalApi', () => {
   it('sends the token and the API version the unit expects', async () => {
     const { api, sent } = build({ body: '{"Devices":[]}' });
