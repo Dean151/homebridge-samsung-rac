@@ -1,0 +1,55 @@
+# Changelog
+
+All notable changes to this project are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.1] - 2026-09-15
+
+### Fixed
+
+- The plugin settings screen showed no form on a fresh install, so there was no
+  field to type an air conditioner's IP address into — and no way out of that,
+  since entering one is what would have created the config block the Homebridge
+  UI requires before it renders the form. An empty block is now seeded before the
+  form is shown; nothing is written to `config.json` until you save.
+- The "Re-fetch certificate" button used a Font Awesome 5 icon name and rendered
+  as a missing-glyph box.
+
+## [0.1.0] - 2026-09-14
+
+Initial release. Controls a Samsung room air conditioner from HomeKit over its
+local network API (`https://<ip>:8888`, mutual TLS) rather than the SmartThings
+cloud, which is what makes the vane/swing control reachable at all.
+
+### Added
+
+- A `HeaterCooler` accessory per unit: power, current temperature, target
+  temperature over the range the unit reports, the modes it says it supports, fan
+  speed, swing, and a linked filter indicator. A service appears once the unit has
+  published a reading for it and is never withdrawn afterwards, so a restart while
+  the AC is off cannot hide a control permanently.
+- Certificate download, device listing and pairing from the Homebridge UI.
+  Pairing needs the unit powered off, then on when prompted — the air conditioner
+  does not hand out a token on request, it calls back on port 8889 at power-on.
+- Credentials are kept out of `config.json`: the Samsung client certificate is
+  downloaded at setup time and device tokens are written `0600` beside it, under
+  the Homebridge storage path.
+- A `homebridge-samsung-rac-probe` CLI (`pair`, `dump`, `writes`) for the cases
+  the UI cannot reach, such as Homebridge in a container without host networking.
+
+### Known limitations
+
+- Developed against one model, a `TP6X_RAC_16K`. Others of the same generation
+  should work; the older port-2878 units will not.
+- Accepted vane values are model-specific. On the reference unit only
+  `Up_And_Low` works. Configurable, and the log says when the unit refuses the
+  value you picked.
+- The hardware discards every write except power while the unit is off, so
+  changes made in the Home app then do nothing and the tile snaps back.
+- Dry and fan-only modes are not exposed; HomeKit has no equivalent, so they
+  report as Auto/Idle and are left alone.
+
+[0.1.1]: https://github.com/Dean151/homebridge-samsung-rac/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/Dean151/homebridge-samsung-rac/releases/tag/v0.1.0
