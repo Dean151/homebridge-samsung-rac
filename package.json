@@ -5,6 +5,10 @@
   "description": "Control a Samsung room air conditioner from HomeKit over its local LAN API, including the vane/swing control the SmartThings cloud cannot reach.",
   "license": "Apache-2.0",
   "author": "Thomas Durand",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/Dean151"
+  },
   "main": "dist/index.js",
   "bin": {
     "homebridge-samsung-rac-probe": "dist/cli/probe.js"
