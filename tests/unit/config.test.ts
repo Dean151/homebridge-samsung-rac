@@ -158,6 +158,47 @@ describe('normaliseConfig', () => {
     });
   });
 
+  describe('the switch lists', () => {
+    const modesFor = (convenienceModes: unknown, log = logger()) =>
+      normaliseConfig({ platform: 'x', convenienceModes } as never, log as never).convenienceModes;
+
+    it('publishes no switches until asked, for want of anything to detect from', () => {
+      const settings = normaliseConfig({ platform: 'x' }, logger() as never);
+      expect(settings.convenienceModes).toEqual([]);
+      expect(settings.modeSwitches).toEqual([]);
+    });
+
+    it('keeps the names as written, since the casing is the unit\'s business', () => {
+      expect(modesFor(['Quiet', '2Step'])).toEqual(['Quiet', '2Step']);
+    });
+
+    it('accepts a comma-separated string, which a hand-written config may well hold', () => {
+      expect(modesFor('Quiet, Comfort')).toEqual(['Quiet', 'Comfort']);
+    });
+
+    it('drops blanks and case-insensitive duplicates', () => {
+      expect(modesFor(['Quiet', '', '  ', 'quiet'])).toEqual(['Quiet']);
+    });
+
+    it('refuses Off, which is what every other switch in the group already means', () => {
+      const log = logger();
+      expect(modesFor(['Off', 'Quiet'], log)).toEqual(['Quiet']);
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('convenienceModes'));
+    });
+
+    it('ignores a setting that is not a list at all', () => {
+      const log = logger();
+      expect(modesFor(42, log)).toEqual([]);
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('convenienceModes'));
+    });
+
+    it('reads the mode switches the same way', () => {
+      const settings = normaliseConfig(
+        { platform: 'x', modeSwitches: ['Dry', 'Wind', 'dry'] } as never, logger() as never);
+      expect(settings.modeSwitches).toEqual(['Dry', 'Wind']);
+    });
+  });
+
   it('refuses a poll interval that would hammer the unit', () => {
     expect(normaliseConfig({ platform: 'x', updateInterval: 1 }, logger() as never).updateInterval).toBe(5);
   });

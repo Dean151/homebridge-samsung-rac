@@ -63,6 +63,26 @@
         ],
         "description": "What to set the vane to when swing is switched on in HomeKit. On a TP6X_RAC_16K only Up_And_Low works: Vertical and SwingUD are rejected outright, and All is accepted and then ignored. The others are kept for units that differ; the log says if yours refuses the one you pick."
       },
+      "convenienceModes": {
+        "title": "Convenience mode switches",
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "enum": ["Comfort", "Quiet", "Speed", "Smart", "2Step", "Sleep"]
+        },
+        "description": "Adds a switch to the Home app for each convenience mode you tick \u2014 the family WindFree belongs to. None are added by default: the unit reports the mode it is in but never the ones it would accept, so there is nothing to detect from, and a switch for a name your model does not know would refuse to stay on. The six offered here are the ones a TP6X_RAC_16K applies, confirmed by read-back. Only one convenience mode runs at a time, so switching one on switches the others off. Which of them your unit calls WindFree is not something it says \u2014 try them and rename the switch in the Home app."
+      },
+      "modeSwitches": {
+        "title": "Dry and fan-only switches",
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "enum": ["Dry", "Wind"]
+        },
+        "description": "Adds a switch for a mode HomeKit's air conditioner tile cannot express. Dry and fan-only (the unit calls it Wind) have no equivalent there, so without a switch they can only be set from the Samsung app \u2014 the plugin reports them as Auto and leaves them alone. Switching one off puts the unit back in the mode it was in before."
+      },
       "outdoorTemperature": {
         "title": "Outdoor temperature sensor",
         "type": "string",
@@ -103,10 +123,12 @@
       "key": "devices",
       "type": "array",
       "buttonText": "Add an air conditioner",
-      "items": ["devices[].name", "devices[].host", "devices[].token"]
+      "items": ["devices[].name", "devices[].host", "devices[].token", "devices[].heating"]
     },
     "updateInterval",
     "swingDirection",
+    "convenienceModes",
+    "modeSwitches",
     "outdoorTemperature",
     "outdoorTemperatureUnit",
     {

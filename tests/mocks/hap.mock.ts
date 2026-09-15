@@ -34,6 +34,7 @@ export const Characteristic = {
   RotationSpeed: characteristic('RotationSpeed'),
   SwingMode: characteristic('SwingMode', { SWING_DISABLED: 0, SWING_ENABLED: 1 }),
   FilterChangeIndication: characteristic('FilterChangeIndication', { FILTER_OK: 0, CHANGE_FILTER: 1 }),
+  On: characteristic('On'),
 };
 
 export const Service = {
@@ -41,6 +42,7 @@ export const Service = {
   HeaterCooler: { UUID: 'HeaterCooler' } as ServiceClass,
   FilterMaintenance: { UUID: 'FilterMaintenance' } as ServiceClass,
   TemperatureSensor: { UUID: 'TemperatureSensor' } as ServiceClass,
+  Switch: { UUID: 'Switch' } as ServiceClass,
 };
 
 export class FakeCharacteristic {
@@ -75,8 +77,18 @@ export class FakeCharacteristic {
 export class FakeService {
   public characteristics: FakeCharacteristic[] = [];
   public linkedServices: FakeService[] = [];
+  public primary = false;
 
-  constructor(public readonly UUID: string) {}
+  /**
+   * Subtypes matter: several services of one type can share an accessory, and
+   * HomeKit identifies each by its subtype — which is what carries a user's
+   * automations across a rename.
+   */
+  constructor(
+    public readonly UUID: string,
+    public displayName?: string,
+    public readonly subtype?: string,
+  ) {}
 
   /** Real HAP adds an optional characteristic on first lookup; mirror that. */
   getCharacteristic(type: CharacteristicClass): FakeCharacteristic {
@@ -111,6 +123,11 @@ export class FakeService {
     }
   }
 
+  setPrimaryService(isPrimary = true): this {
+    this.primary = isPrimary;
+    return this;
+  }
+
   addLinkedService(service: FakeService): void {
     if (!this.linkedServices.includes(service)) {
       this.linkedServices.push(service);
@@ -130,8 +147,12 @@ export class FakeAccessory {
     return this.services.find((service) => service.UUID === type.UUID);
   }
 
-  addService(type: ServiceClass): FakeService {
-    const service = new FakeService(type.UUID);
+  getServiceById(type: ServiceClass, subtype: string): FakeService | undefined {
+    return this.services.find((service) => service.UUID === type.UUID && service.subtype === subtype);
+  }
+
+  addService(type: ServiceClass, displayName?: string, subtype?: string): FakeService {
+    const service = new FakeService(type.UUID, displayName, subtype);
     this.services.push(service);
     return service;
   }

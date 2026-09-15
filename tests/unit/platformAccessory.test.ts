@@ -68,6 +68,7 @@ async function build(options: {
     setTargetTemperature: jest.fn(applied(22)),
     setSpeedLevel: jest.fn(applied(2)),
     setWindDirection: jest.fn(applied('Up_And_Low')),
+    setComode: jest.fn(applied('Quiet')),
     close: jest.fn(),
   };
 
@@ -85,7 +86,14 @@ async function build(options: {
     log,
     api: { hap: { HapStatusError: FakeHapStatusError, HAPStatus } },
     // A long interval keeps the poll timer from firing on its own mid-test.
-    settings: { updateInterval: 3600, swingDirection: 'Up_And_Low', ...options.settings },
+    settings: {
+      updateInterval: 3600,
+      swingDirection: 'Up_And_Low',
+      // Empty by default, exactly as a config that has not asked for switches.
+      convenienceModes: [],
+      modeSwitches: [],
+      ...options.settings,
+    },
   };
 
   await SamsungRacAccessory.create(
@@ -552,6 +560,144 @@ describe('SamsungRacAccessory', () => {
     });
   });
 
+  describe('mode switches', () => {
+    const switches = (accessory: FakeAccessory) =>
+      accessory.services.filter((service) => service.UUID === Service.Switch.UUID);
+    const on = (service?: FakeService) => service?.findCharacteristic(Characteristic.On);
+    const convenience = { convenienceModes: ['Quiet', 'Comfort'] };
+
+    it('publishes none until the config asks for one', async () => {
+      const { accessory } = await build({ status: { comode: 'Off' } });
+      expect(switches(accessory)).toHaveLength(0);
+    });
+
+    it('leaves the air conditioner as the accessory the Home app leads with', async () => {
+      const { accessory, heaterCooler } = await build({
+        status: { comode: 'Off' },
+        settings: convenience,
+      });
+
+      expect(heaterCooler.primary).toBe(true);
+      expect(switches(accessory).every((service) => !service.primary)).toBe(true);
+    });
+
+    it('publishes one per convenience mode, linked to the air conditioner', async () => {
+      const { accessory, heaterCooler } = await build({
+        status: { comode: 'Off' },
+        settings: convenience,
+      });
+
+      expect(switches(accessory).map((service) => service.subtype))
+        .toEqual(['comode-quiet', 'comode-comfort']);
+      expect(switches(accessory).map((service) => service.displayName))
+        .toEqual(['Test AC Quiet', 'Test AC Comfort']);
+      expect(heaterCooler.linkedServices).toEqual(expect.arrayContaining(switches(accessory)));
+    });
+
+    it('reads on only for the mode the unit is actually in', async () => {
+      const { accessory } = await build({ status: { comode: 'Quiet' }, settings: convenience });
+
+      expect(on(accessory.getServiceById(Service.Switch, 'comode-quiet'))?.getHandler?.()).toBe(true);
+      expect(on(accessory.getServiceById(Service.Switch, 'comode-comfort'))?.getHandler?.()).toBe(false);
+    });
+
+    it('writes the mode when switched on, and Off when switched off', async () => {
+      const { accessory, adapter } = await build({ status: { comode: 'Off' }, settings: convenience });
+      const quiet = on(accessory.getServiceById(Service.Switch, 'comode-quiet'));
+
+      await quiet?.setHandler?.(true);
+      expect(adapter.setComode).toHaveBeenCalledWith('Quiet');
+
+      await quiet?.setHandler?.(false);
+      expect(adapter.setComode).toHaveBeenLastCalledWith('Off');
+    });
+
+    it('turns the rest off when one comes on, including from the remote', async () => {
+      const { accessory, adapter, setStatus } = await build({
+        status: { comode: 'Comfort' },
+        settings: convenience,
+      });
+
+      setStatus({ comode: 'Quiet' });
+      await pollOnce(adapter.getStatus);
+
+      expect(on(accessory.getServiceById(Service.Switch, 'comode-quiet'))?.value).toBe(true);
+      expect(on(accessory.getServiceById(Service.Switch, 'comode-comfort'))?.value).toBe(false);
+    });
+
+    it('publishes nothing for a unit that reports no convenience mode at all', async () => {
+      const { accessory, log } = await build({ settings: { convenienceModes: ['Quiet'] } });
+
+      expect(switches(accessory)).toHaveLength(0);
+      expect(log.info.mock.calls.flat().join(' ')).toContain('not publishing a Quiet switch');
+    });
+
+    it('adopts a convenience mode the unit only reports once it is running', async () => {
+      const { accessory, adapter, setStatus } = await build({ settings: { convenienceModes: ['Quiet'] } });
+      expect(switches(accessory)).toHaveLength(0);
+
+      setStatus({ comode: 'Off' });
+      await pollOnce(adapter.getStatus);
+
+      expect(accessory.getServiceById(Service.Switch, 'comode-quiet')).toBeDefined();
+    });
+
+    it('drops a switch the config no longer asks for', async () => {
+      const cached = new FakeAccessory();
+      cached.addService(Service.Switch, 'Test AC Quiet', 'comode-quiet');
+
+      const { accessory } = await build({ accessory: cached, status: { comode: 'Off' } });
+
+      expect(switches(accessory)).toHaveLength(0);
+    });
+
+    it('leaves a switch it does not own where it is', async () => {
+      const cached = new FakeAccessory();
+      cached.addService(Service.Switch, 'Someone else', 'not-ours');
+
+      const { accessory } = await build({ accessory: cached, status: { comode: 'Off' } });
+
+      expect(accessory.getServiceById(Service.Switch, 'not-ours')).toBeDefined();
+    });
+
+    it('gives Dry and fan-only the switch HeaterCooler has no room for', async () => {
+      const { accessory, adapter } = await build({ settings: { modeSwitches: ['Dry', 'Wind'] } });
+
+      // The unit calls it Wind; a tile called "Wind" would not tell anyone what
+      // it does, and the Home app can still rename it.
+      expect(accessory.getServiceById(Service.Switch, 'mode-wind')?.displayName).toBe('Test AC Fan Only');
+
+      await on(accessory.getServiceById(Service.Switch, 'mode-dry'))?.setHandler?.(true);
+      expect(adapter.setMode).toHaveBeenCalledWith('Dry');
+    });
+
+    it('returns to the mode the unit was in before, when a mode switch goes off', async () => {
+      const { accessory, adapter, setStatus } = await build({
+        status: { mode: 'Auto' },
+        settings: { modeSwitches: ['Dry'] },
+      });
+
+      setStatus({ mode: 'Dry' });
+      await pollOnce(adapter.getStatus);
+      expect(on(accessory.getServiceById(Service.Switch, 'mode-dry'))?.value).toBe(true);
+
+      await on(accessory.getServiceById(Service.Switch, 'mode-dry'))?.setHandler?.(false);
+      expect(adapter.setMode).toHaveBeenCalledWith('Auto');
+    });
+
+    it('falls back to a mode HomeKit can drive when it never saw another one', async () => {
+      // Homebridge restarted while the unit was already in Dry: there is no
+      // "no mode" to go back to, so off has to mean something.
+      const { accessory, adapter } = await build({
+        status: { mode: 'Dry' },
+        settings: { modeSwitches: ['Dry'] },
+      });
+
+      await on(accessory.getServiceById(Service.Switch, 'mode-dry'))?.setHandler?.(false);
+      expect(adapter.setMode).toHaveBeenCalledWith('Cool');
+    });
+  });
+
   describe('responsiveness', () => {
     it('reports No Response until a status has actually been read', async () => {
       const { heaterCooler } = await build({ failReads: true });
@@ -575,7 +721,7 @@ describe('SamsungRacAccessory', () => {
         {
           Service, Characteristic, log,
           api: { hap: { HapStatusError: FakeHapStatusError, HAPStatus } },
-          settings: { updateInterval: 3600, swingDirection: 'Up_And_Low' },
+          settings: { updateInterval: 3600, swingDirection: 'Up_And_Low', convenienceModes: [], modeSwitches: [] },
         } as never,
         accessory as never,
         { getStatus, close: jest.fn() } as never,
@@ -604,7 +750,7 @@ describe('SamsungRacAccessory', () => {
         {
           Service, Characteristic, log,
           api: { hap: { HapStatusError: FakeHapStatusError, HAPStatus } },
-          settings: { updateInterval: 3600, swingDirection: 'Up_And_Low' },
+          settings: { updateInterval: 3600, swingDirection: 'Up_And_Low', convenienceModes: [], modeSwitches: [] },
         } as never,
         new FakeAccessory() as never,
         { getStatus, close: jest.fn() } as never,

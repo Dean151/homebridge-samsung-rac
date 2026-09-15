@@ -27,6 +27,12 @@ describe('parseOptions', () => {
 describe('toRacStatus', () => {
   const status = toRacStatus(devicesFrom(fixture)[0]);
 
+  it('reads the convenience mode the unit is in, and nothing about the ones it would take', () => {
+    expect(status.comode).toBe('Off');
+    expect(toRacStatus({ Mode: { options: ['Comode_Quiet'] } }).comode).toBe('Quiet');
+    expect(toRacStatus({ Mode: { options: [] } }).comode).toBeUndefined();
+  });
+
   it('reads the reference unit captured from real hardware', () => {
     expect(status).toMatchObject({
       active: false,

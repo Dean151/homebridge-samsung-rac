@@ -100,6 +100,18 @@ export interface RacStatus {
   maxSpeedLevel?: number;
   filterAlarm: boolean;
   /**
+   * The unit's convenience mode — `Comode` in `Mode.options` — which is the
+   * family WindFree belongs to. One value at a time, `Off` when none is
+   * running, and absent when the unit publishes no such key.
+   *
+   * The unit never publishes the names it would ACCEPT, only the one it holds,
+   * so the vocabulary cannot be discovered from a document: the reference unit
+   * takes `Comfort`, `Quiet`, `Speed`, `Smart`, `2Step` and `Sleep` while
+   * reporting `Off`. Which switches to offer is therefore a config decision.
+   * Measured 2026-09-15; see notes/WRITE-SUPPORT.md.
+   */
+  comode?: string;
+  /**
    * The outdoor sensor reading in Celsius, absent when the unit does not
    * publish one or publishes something that cannot be a temperature.
    */
@@ -211,6 +223,7 @@ export function toRacStatus(device: RacDeviceDocument, settings: RacStatusOption
     speedLevel: firstFinite(device.Wind?.speedLevel),
     maxSpeedLevel: firstFinite(device.Wind?.maxSpeedLevel),
     filterAlarm: (device.Alarms ?? []).some((alarm) => alarm.code === 'FilterAlarm'),
+    comode: modeOptions.Comode,
     outdoorTemperature: outdoorTemperatureFrom(modeOptions, settings.outdoorTemperatureUnit),
     resources: device.resources ?? [],
     options: modeOptions,

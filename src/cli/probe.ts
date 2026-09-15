@@ -29,7 +29,8 @@ import { CertificateStore } from '../transport/certificate';
 import { LocalApi } from '../transport/localApi';
 import { pairDevice } from '../transport/pairing';
 import { TokenStore } from '../transport/tokenStore';
-import { devicesFrom, RacDeviceDocument, RacDevicesResponse, toRacStatus } from '../racStatus';
+import { devicesFrom, parseOptions, RacDeviceDocument, RacDevicesResponse, toRacStatus } from '../racStatus';
+import { buildMatrix, type Attempt } from './writeMatrix';
 
 interface Args {
   command: string;
@@ -172,15 +173,6 @@ async function commandDump(args: Args): Promise<void> {
 
 // --- the write matrix ------------------------------------------------------
 
-interface Attempt {
-  label: string;
-  resource: string;
-  method: string;
-  body: unknown;
-  requested: unknown;
-  read: (device: RacDeviceDocument) => unknown;
-}
-
 interface AttemptResult extends Attempt {
   before: unknown;
   after: unknown;
@@ -218,107 +210,32 @@ async function attempt(api: LocalApi, candidate: Attempt, settleMs: number): Pro
   };
 }
 
-function buildMatrix(device: RacDeviceDocument): Attempt[] {
-  const id = device.id ?? '0';
-  const attempts: Attempt[] = [];
-
-  const windDirection = (value: string) => {
-    for (const [shape, body] of [
-      ['nested', { Wind: { direction: value } }],
-      ['flat', { direction: value }],
-    ] as const) {
-      for (const method of ['PUT', 'POST']) {
-        attempts.push({
-          label: `Wind.direction = ${value} (${shape}, ${method})`,
-          resource: `/devices/${id}/wind`,
-          method,
-          body,
-          requested: value,
-          read: (d) => d.Wind?.direction,
-        });
-      }
-    }
-  };
-
-  // The headline feature. The Samsung app offers only Vertical/Fixe on this
-  // unit, but the OCF vendor extension documents four values, so try them all.
-  for (const value of ['Up_And_Low', 'Vertical', 'SwingUD', 'All']) {
-    windDirection(value);
-  }
-
-  const maxSpeed = device.Wind?.maxSpeedLevel ?? 0;
-  if (maxSpeed > 0) {
-    const current = device.Wind?.speedLevel ?? 0;
-    const next = current === maxSpeed ? Math.max(0, maxSpeed - 1) : current + 1;
-    attempts.push({
-      label: `Wind.speedLevel = ${next}`,
-      resource: `/devices/${id}/wind`,
-      method: 'PUT',
-      body: { Wind: { speedLevel: next } },
-      requested: next,
-      read: (d) => d.Wind?.speedLevel,
-    });
-  }
-
-  const temperature = device.Temperatures?.[0];
-  if (Number.isFinite(temperature?.desired)) {
-    const desired = temperature!.desired!;
-    const next = desired >= (temperature!.maximum ?? 30) ? desired - 1 : desired + 1;
-    for (const [shape, body] of [
-      ['nested', { Temperatures: [{ id: temperature!.id ?? '0', desired: next }] }],
-      ['flat', { desired: next }],
-    ] as const) {
-      attempts.push({
-        label: `Temperatures[0].desired = ${next} (${shape})`,
-        resource: `/devices/${id}/temperatures/${temperature!.id ?? '0'}`,
-        method: 'PUT',
-        body,
-        requested: next,
-        read: (d) => d.Temperatures?.[0]?.desired,
-      });
-    }
-  }
-
-  const current = device.Mode?.modes?.[0];
-  const advertised = device.Mode?.supportedModes ?? [];
-  const otherMode = advertised.find((mode) => mode !== current);
-
-  // 'Heat' is tried even when the unit does not advertise it. The reference
-  // unit omits Heat from supportedModes while sitting in Heat and accepting a
-  // write of it, so the advertised list is a floor — the only way to find an
-  // unadvertised mode is to ask for it. See notes/HANDOFF.md.
-  const unadvertised = advertised.some((mode) => mode.toLowerCase() === 'heat') ? [] : ['Heat'];
-
-  for (const mode of [otherMode, ...unadvertised]) {
-    if (!mode || mode === current) {
-      continue;
-    }
-    attempts.push({
-      label: `Mode.modes = [${mode}]${unadvertised.includes(mode) ? ' (not advertised)' : ''}`,
-      resource: `/devices/${id}/mode`,
-      method: 'PUT',
-      body: { Mode: { modes: [mode] } },
-      requested: mode,
-      read: (d) => d.Mode?.modes?.[0],
-    });
-  }
-
-  const power = device.Operation?.power === 'On' ? 'Off' : 'On';
-  attempts.push({
-    label: `Operation.power = ${power}`,
-    resource: `/devices/${id}/operation`,
-    method: 'PUT',
-    body: { Operation: { power } },
-    requested: power,
-    read: (d) => d.Operation?.power,
-  });
-
-  return attempts;
+export interface Restore {
+  label: string;
+  resource: string;
+  body: unknown;
+  read: (d: RacDeviceDocument) => unknown;
+  want: unknown;
 }
 
-async function restore(api: LocalApi, original: RacDeviceDocument, settleMs: number): Promise<void> {
+export interface RestoreOptions {
+  settleMs: number;
+  /** Whatever the `Mode.options` probe changed, with the shape that worked. */
+  extra?: Restore[];
+  /**
+   * How long to give the unit after powering it back on before writing to it.
+   * Only ever shortened by the tests — the hardware needs the full wait.
+   */
+  powerOnMs?: number;
+}
+
+export async function restore(
+  api: LocalApi,
+  original: RacDeviceDocument,
+  { settleMs, extra = [], powerOnMs = 5000 }: RestoreOptions,
+): Promise<void> {
   const id = original.id ?? '0';
-  const restores: { label: string; resource: string; body: unknown; read: (d: RacDeviceDocument) => unknown; want: unknown }[] = [];
+  const restores: Restore[] = [];
 
   if (original.Wind?.direction) {
     restores.push({
@@ -358,17 +275,26 @@ async function restore(api: LocalApi, original: RacDeviceDocument, settleMs: num
     });
   }
 
+  // Whatever the options probe changed, put back with the shape that worked —
+  // there is no point guessing the shape a second time.
+  restores.push(...extra);
+
   note('');
   note('Restoring original values...');
 
   // The unit silently discards every write except power while it is off, so a
   // restore that runs after the power-probe turned it off achieves nothing.
   // Power it on, restore, and put the power back last.
-  const wasOff = original.Operation?.power !== 'On';
-  if (restores.length && wasOff) {
+  //
+  // What matters is the state the unit is in NOW, not the one it started in:
+  // the matrix ends by flipping power, so a unit that was on when the run began
+  // is off by the time we get here — and asking `original` gave exactly the
+  // wrong answer in that case, silently discarding every restore.
+  const powerNow = (await readDevice(api)).Operation?.power;
+  if (restores.length && powerNow !== 'On') {
     note('  powering on so the restores are not discarded');
     await api.send('PUT', `/devices/${id}/operation`, { Operation: { power: 'On' } });
-    await sleep(5000);
+    await sleep(powerOnMs);
   }
 
   for (const item of restores) {
@@ -412,11 +338,22 @@ async function commandWrites(args: Args): Promise<void> {
     const matrix = buildMatrix(await readDevice(api));
     const results: AttemptResult[] = [];
     const settled = new Set<string>();
+    const originalOptions = parseOptions(original.Mode?.options);
+    const optionRestores = new Map<string, Restore>();
+    /**
+     * The body shape for a `Mode.options` write is a guess, and it is the same
+     * guess for every key — so once one shape lands, the other two are dead
+     * weight on every value still to be tried, and there are a lot of those.
+     */
+    let optionShape: string | undefined;
 
     for (const candidate of matrix) {
       // Once one body shape works for a field, the remaining shapes for the
       // same target value tell us nothing new.
       if (settled.has(candidate.label.split(' (')[0])) {
+        continue;
+      }
+      if (candidate.optionKey && optionShape && candidate.shape !== optionShape) {
         continue;
       }
       const result = await attempt(api, candidate, args.settleMs);
@@ -425,12 +362,29 @@ async function commandWrites(args: Args): Promise<void> {
         `  ${result.status.padEnd(8)} ${result.label}  (${JSON.stringify(result.before)} -> ${JSON.stringify(result.after)})`
         + (result.detail ? `  ${result.detail}` : ''),
       );
-      if (result.status === 'APPLIED') {
-        settled.add(candidate.label.split(' (')[0]);
+      if (result.status !== 'APPLIED') {
+        continue;
+      }
+      settled.add(candidate.label.split(' (')[0]);
+
+      const key = candidate.optionKey;
+      if (!key || !candidate.shape) {
+        continue;
+      }
+      optionShape = candidate.shape;
+      const want = originalOptions[key];
+      if (want !== undefined && candidate.restoreWith) {
+        optionRestores.set(key, {
+          label: `Mode.options ${key}`,
+          resource: candidate.resource,
+          body: candidate.restoreWith(want),
+          read: (d) => parseOptions(d.Mode?.options)[key],
+          want,
+        });
       }
     }
 
-    await restore(api, original, args.settleMs);
+    await restore(api, original, { settleMs: args.settleMs, extra: [...optionRestores.values()] });
 
     const applied = results.filter((result) => result.status === 'APPLIED');
     const report = [
@@ -445,6 +399,15 @@ async function commandWrites(args: Args): Promise<void> {
       'Only a **changed read-back** counts as APPLIED — this hardware returns success for',
       'commands it discards, so a 200 response is not evidence of anything.',
       '',
+      ...(results.some((result) => result.optionKey)
+        ? [
+          'The `Mode.options` rows are a search rather than a check: nothing documents',
+          'how to write one of those keys back, nor what names `Comode` accepts, so each',
+          'row rules a name in or out. An ERROR there is the firmware saying it does not',
+          'know the name — which is an answer, the way 400 on `Vertical` was for the vane.',
+          '',
+        ]
+        : []),
       '| Result | Field | Method | Body | Before | After |',
       '|---|---|---|---|---|---|',
       ...results.map((result) =>
@@ -508,7 +471,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error(`\n${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+// Guarded so the module can be imported by tests without running a command.
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`\n${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}

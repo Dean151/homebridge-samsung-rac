@@ -37,10 +37,27 @@ A single `HeaterCooler` accessory per unit:
 | Swing | `Wind.direction` |
 | Filter indicator | the `FilterAlarm` entry in `Alarms` |
 | Outdoor temperature | `Mode.options.OutdoorTemp`, as its own sensor |
+| Convenience modes | `Mode.options.Comode`, as switches you ask for |
+| Dry and fan-only | `Mode.modes`, as switches you ask for |
 
 Dry and fan-only modes have no HomeKit equivalent. The plugin reports them as
 Auto/Idle and leaves them alone rather than overwriting a mode you chose in the
-Samsung app.
+Samsung app — and `modeSwitches` adds a switch for either, which is the only way
+to *set* them from the Home app. Switching one off puts the unit back in the
+mode it was in before.
+
+**Convenience modes** — the family WindFree belongs to — are switches too, via
+`convenienceModes`. The unit keeps one convenience mode at a time, so the
+switches behave as one group: turning Quiet on turns Comfort off, including when
+the change was made on the remote.
+
+Neither list has a default, on purpose. The unit reports the mode it is *in* but
+never the ones it would accept, so there is nothing to detect from, and a switch
+for a name your model does not know would simply refuse to stay on. A
+TP6X_RAC_16K applies `Comfort`, `Quiet`, `Speed`, `Smart`, `2Step` and `Sleep`,
+confirmed by read-back; `WindFree` and `SoftCool` are not names it knows, so one
+of those six is what it calls WindFree. Which one is stated nowhere — try them,
+and rename the switch in the Home app to whatever it turns out to be.
 
 **Heat is offered even though the unit denies supporting it.** The reference
 unit lists `Cool`, `Dry`, `Wind` and `Auto` as its supported modes and leaves
@@ -174,6 +191,14 @@ Always pass `--power-on`. On the reference unit **every write except power is
 silently discarded while it is off** — 200, no error, no effect — so a run without
 it says nothing about whether a field is writable.
 
+The run also searches `Mode.options`, where the unit keeps its convenience mode,
+auto-clean and sleep timer. Nothing documents how to write those keys, nor what
+names they take, so the probe tries each in turn and reports which the unit
+applied, rejected, or accepted and discarded. That search is what settled the
+convenience mode on the reference unit, and it is how a different model gets
+settled too — **if yours applies a name this one does not, that report is the
+thing to attach to an issue.**
+
 The plugin applies the same rule at runtime: every write is confirmed by a
 read-back, and a value the unit quietly refuses is corrected in the Home app
 rather than left showing something that never happened.
@@ -187,6 +212,13 @@ Measured on a TP6X_RAC_16K, 2026-09-15:
 | Method | `PUT` only — `POST` returns 405 |
 | Power, fan speed, setpoint, mode | all applied |
 | Vane | `Fix` and `Up_And_Low` applied; `Vertical` and `SwingUD` rejected with 400; `All` accepted and then ignored |
+| Convenience mode (`Comode`) | `Comfort`, `Quiet`, `Speed`, `Smart`, `2Step` and `Sleep` applied; `WindFree` and `SoftCool` ignored |
+| Auto-clean | applied |
+| Sleep timer (`Sleep`) | not applied |
+| `Mode.options` body | one entry at a time — `{"Mode":{"options":["Comode_Quiet"]}}`. The whole array echoed back is rejected |
+
+The last three rows are **not in the Home app yet**: `HeaterCooler` has nowhere
+to put a convenience mode, so exposing it needs an accessory of its own.
 
 Consequence worth knowing: **changing anything in the Home app while the unit is
 off does nothing**, and the tile will snap back after a second. Turn it on first.
@@ -205,6 +237,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
   ],
   "updateInterval": 10,
   "swingDirection": "Up_And_Low",
+  "convenienceModes": ["Quiet"],
+  "modeSwitches": ["Dry"],
   "outdoorTemperature": "linked",
   "outdoorTemperatureUnit": "fahrenheit"
 }
@@ -218,6 +252,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `devices[].heating` | `auto` | `on` or `off` to override whether Heat is offered. `auto` reads it from the unit, which is right for every unit seen so far. |
 | `updateInterval` | `10` | Seconds between polls; minimum 5. |
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
+| `convenienceModes` | none | `Comode` values to publish a switch for, e.g. `["Quiet"]`. One runs at a time, so the switches act as one group. |
+| `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind`, the two HomeKit's air conditioner tile cannot express. |
 | `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
 | `requestTimeout` | `5` | Seconds. |

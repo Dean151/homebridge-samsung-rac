@@ -225,6 +225,24 @@ export class DeviceAdapter {
     });
   }
 
+  /**
+   * The convenience mode — `Comode` in `Mode.options`, where WindFree lives.
+   *
+   * Written as a SINGLE entry, which is the only shape that works: the flat
+   * `{"options":[...]}` is ignored and echoing the whole array back is refused
+   * outright. The other entries in the array are left alone by this.
+   * Measured 2026-09-15; see notes/WRITE-SUPPORT.md.
+   */
+  setComode(value: string): Promise<ApplyResult> {
+    return this.applyChange({
+      field: 'Mode.options.Comode',
+      resource: `/devices/${this.deviceId}/mode`,
+      body: { Mode: { options: [`Comode_${value}`] } },
+      requested: value,
+      read: (status) => status.comode,
+    });
+  }
+
   setWindDirection(direction: string): Promise<ApplyResult> {
     return this.applyChange({
       field: 'Wind.direction',
@@ -354,7 +372,7 @@ export class DeviceAdapter {
 const trackedFields = [
   'active', 'mode', 'currentTemperature', 'targetTemperature',
   'speedLevel', 'windDirection', 'filterAlarm', 'connected',
-  'outdoorTemperature',
+  'outdoorTemperature', 'comode',
 ] as const satisfies readonly (keyof RacStatus)[];
 
 function format(value: unknown): string {

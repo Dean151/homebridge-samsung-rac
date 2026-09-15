@@ -41,6 +41,20 @@ export interface NormalisedConfig {
    * Null exactly when the placement is null, so either can be tested for.
    */
   outdoorTemperatureUnit: 'C' | 'F' | null;
+  /**
+   * Which `Comode` values get a switch in HomeKit — the convenience modes,
+   * where WindFree lives. Empty by default, and deliberately so: the unit
+   * publishes the value it holds but never the ones it would accept, so any
+   * default would be a guess that leaves dead switches on a model whose
+   * vocabulary differs. See RacStatus.comode.
+   */
+  convenienceModes: string[];
+  /**
+   * Which `Mode.modes` values get a switch — the modes `HeaterCooler` has no
+   * way to express, `Dry` and `Wind`. Without one they can only be reached from
+   * the Samsung app; the plugin reports them as Auto and leaves them alone.
+   */
+  modeSwitches: string[];
   certificateUrl?: string;
 }
 
@@ -186,10 +200,55 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     outdoorTemperatureUnit: placement === null
       ? null
       : toOutdoorUnit(config.outdoorTemperatureUnit, config.outdoorTemperature, log),
+    convenienceModes: toNameList(config.convenienceModes, 'convenienceModes', log),
+    modeSwitches: toNameList(config.modeSwitches, 'modeSwitches', log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
   };
+}
+
+/**
+ * A list of device-side names — `Comode` values, or modes — from an array or a
+ * comma-separated string, since a hand-written config.json may say either.
+ *
+ * Case is the unit's business, so what the user wrote is kept as written and
+ * only duplicates that differ by case are dropped.
+ */
+function toNameList(value: unknown, key: string, log: Logging): string[] {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : [];
+
+  if (!Array.isArray(value) && typeof value !== 'string' && value !== undefined && value !== null) {
+    log.warn(`Ignoring a ${key} setting that is neither a list nor a comma-separated string.`);
+    return [];
+  }
+
+  const names: string[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of raw) {
+    const name = typeof entry === 'string' ? entry.trim() : '';
+    if (!name) {
+      continue;
+    }
+    // A switch for 'Off' would be the off position of every other switch in the
+    // group, permanently disagreeing with them.
+    if (name.toLowerCase() === 'off') {
+      log.warn(`Ignoring 'Off' in ${key}: switching a convenience mode off is what the other switches do.`);
+      continue;
+    }
+    if (seen.has(name.toLowerCase())) {
+      continue;
+    }
+    seen.add(name.toLowerCase());
+    names.push(name);
+  }
+
+  return names;
 }
 
 function toNumber(value: unknown, fallback: number): number {

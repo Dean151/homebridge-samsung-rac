@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Switches for the modes HomeKit's air conditioner tile has no room for, each
+  off by default and added by naming it in the config:
+
+  - `convenienceModes` publishes a switch per `Comode` value — the convenience
+    modes, the family WindFree belongs to. The unit runs one at a time, so the
+    switches are one group backed by one field: turning Quiet on turns Comfort
+    off, including when the change was made on the remote.
+  - `modeSwitches` publishes a switch for `Dry` and `Wind`, which until now
+    could only be set from the Samsung app. Switching one off returns the unit
+    to the mode it was in before.
+
+  Neither list defaults to anything, deliberately: the unit reports the value
+  each field holds but never the values it would accept, so there is nothing to
+  detect from, and a switch for a name a given model does not know would refuse
+  to stay on. The Homebridge UI offers the six names a TP6X_RAC_16K applies.
+
+- `probe writes` now also searches `Mode.options` — `Comode` (the unit's
+  convenience mode), `Autoclean` and `Sleep`. Neither the body shape for those
+  keys nor the names they take is documented anywhere, so the probe tries three
+  shapes and eight names and reports what each one did, restoring whatever it
+  changed through the shape that worked.
+
+  On the reference unit this settled both: writes land as a single entry,
+  `{"Mode":{"options":["Comode_Quiet"]}}`, and `Comode` accepts `Comfort`,
+  `Quiet`, `Speed`, `Smart`, `2Step` and `Sleep` while ignoring `WindFree` and
+  `SoftCool`. `Autoclean` applies; the `Sleep` timer does not. None of this is
+  exposed in HomeKit yet — `HeaterCooler` has no slot for a convenience mode.
+
+### Fixed
+
+- `devices[].heating` never appeared in the Homebridge UI. It has been in the
+  config schema since 0.2.0, but the form's layout listed the fields around it
+  and not that one, so the only way to set it was by hand in `config.json`.
+
+- `probe writes` left the unit in whatever state it had probed it into, rather
+  than restoring it, whenever the unit had been **on** when the run started. The
+  matrix ends by flipping power, so by the time the restores ran the unit was
+  off — and this hardware accepts and discards every write except power while it
+  is off. The restore step decided whether to power the unit back on from the
+  state it had captured at the start of the run instead of the state the unit
+  was in, so it skipped that step in exactly the case that needed it.
+
 ### Changed
 
 - The outdoor sensor can now be published as an accessory of its own, so it can

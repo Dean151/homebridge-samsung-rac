@@ -17,6 +17,45 @@ const autoModeDeadBand = 0.5;
 /** The value Wind.direction takes when the vane is parked. */
 const swingOffDirection = 'Fix';
 
+/** The value Comode takes when no convenience mode is running. */
+const comodeOff = 'Off';
+
+/**
+ * Names the unit uses that read badly on a tile. Everything else keeps the
+ * unit's own name, so the word in the Home app is the word in the log and in
+ * the config — and anything here can still be renamed in the Home app.
+ */
+const switchLabels: Record<string, string> = {
+  wind: 'Fan Only',
+  '2step': '2 Step',
+};
+
+/** Subtype prefixes for the switches this plugin owns, so it only removes its own. */
+const switchSubtypes = { comode: 'comode-', mode: 'mode-' } as const;
+
+function labelFor(name: string): string {
+  return switchLabels[name.toLowerCase()] ?? name;
+}
+
+/**
+ * One switch in a group backed by a single field on the unit.
+ *
+ * The group is a radio button, not a set of independent toggles: every member
+ * reads from the same value, so they cannot disagree with each other. Turning
+ * Quiet on makes Comfort read false on the same push — including when the
+ * change was made on the remote rather than in the Home app.
+ */
+interface ModeSwitch {
+  /** Stable, and the HomeKit subtype: it is what carries the user's automations. */
+  subtype: string;
+  label: string;
+  /** Whether the unit publishes the field this switch is backed by at all. */
+  available: (status: RacStatus) => boolean;
+  isOn: (status: RacStatus) => boolean;
+  /** What to send, or null when there is nothing sensible to send. */
+  write: (on: boolean) => (() => Promise<ApplyResult>) | null;
+}
+
 /** HAP pins HeatingThresholdTemperature to 0-25 °C, unlike the cooling threshold. */
 const hapHeatingThresholdMin = 0;
 const hapHeatingThresholdMax = 25;
@@ -56,6 +95,15 @@ export class SamsungRacAccessory {
   /** Whether HEAT is currently on offer, so adoption stays one-way. */
   private offersHeat = false;
 
+  /** The switches currently published for modes HeaterCooler cannot express. */
+  private modeSwitches: ModeSwitch[] = [];
+
+  /**
+   * The last mode seen that a switch does not stand for, so switching Dry off
+   * can put the unit back where it was rather than somewhere arbitrary.
+   */
+  private lastPlainMode?: string;
+
   static async create(
     platform: SamsungRacPlatform,
     accessory: PlatformAccessory,
@@ -91,6 +139,10 @@ export class SamsungRacAccessory {
     this.service = this.accessory.getService(this.platform.Service.HeaterCooler)
       || this.accessory.addService(this.platform.Service.HeaterCooler);
     this.service.setCharacteristic(this.platform.Characteristic.Name, this.accessory.displayName);
+    // Said out loud rather than left to the order services happen to be added
+    // in: once this accessory carries switches too, the Home app has to know
+    // which of them is the air conditioner.
+    this.service.setPrimaryService(true);
 
     this.service.getCharacteristic(this.platform.Characteristic.Active)
       .onGet(this.getActive.bind(this))
@@ -128,6 +180,7 @@ export class SamsungRacAccessory {
     this.configureSwing();
     this.configureFilter();
     this.configureOutdoorSensor();
+    this.configureModeSwitches();
     this.configured = true;
 
     const interval = this.platform.settings.updateInterval;
@@ -410,6 +463,126 @@ export class SamsungRacAccessory {
   }
 
   /**
+   * The switches the user asked for, in two groups: the unit's convenience mode
+   * (`Comode`, where WindFree lives) and the modes `HeaterCooler` cannot
+   * express (`Dry`, `Wind`).
+   *
+   * Both are empty by default. The unit publishes the value each field holds
+   * but never the values it would ACCEPT — the reference unit takes six
+   * convenience modes while reporting `Off` — so there is nothing to detect
+   * from, and a guessed default would leave switches that cannot work on a
+   * model whose vocabulary differs. `probe writes` is how a name gets confirmed.
+   */
+  private modeSwitchSpecs(): ModeSwitch[] {
+    const specs: ModeSwitch[] = [];
+
+    for (const name of this.platform.settings.convenienceModes) {
+      specs.push({
+        subtype: `${switchSubtypes.comode}${name.toLowerCase()}`,
+        label: labelFor(name),
+        available: (status) => typeof status.comode === 'string' && status.comode.length > 0,
+        isOn: (status) => status.comode?.toLowerCase() === name.toLowerCase(),
+        // Off is the one value every unit that has the field agrees on: it is
+        // what it reports when nothing is running.
+        write: (on) => () => this.adapter.setComode(on ? name : comodeOff),
+      });
+    }
+
+    for (const name of this.platform.settings.modeSwitches) {
+      specs.push({
+        subtype: `${switchSubtypes.mode}${name.toLowerCase()}`,
+        label: labelFor(name),
+        available: (status) => status.mode.length > 0,
+        isOn: (status) => status.mode.toLowerCase() === name.toLowerCase(),
+        write: (on) => {
+          if (on) {
+            return () => this.adapter.setMode(this.deviceModeNamed(name.toLowerCase()));
+          }
+          const back = this.modeToReturnTo();
+          return back ? () => this.adapter.setMode(back) : null;
+        },
+      });
+    }
+
+    return specs;
+  }
+
+  /**
+   * Where to put the unit when a mode switch is turned off. There is no "no
+   * mode" on this hardware — it is always in one — so off means going back to
+   * whatever it was doing before, and failing that to something HomeKit can
+   * drive from the tile.
+   */
+  private modeToReturnTo(): string | null {
+    if (this.lastPlainMode) {
+      return this.lastPlainMode;
+    }
+    for (const wanted of ['cool', 'auto', 'heat']) {
+      const found = this.status.supportedModes.find((mode) => mode.toLowerCase() === wanted);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  private modeSwitchService(spec: ModeSwitch): Service | undefined {
+    return this.accessory.getServiceById(this.platform.Service.Switch, spec.subtype);
+  }
+
+  private configureModeSwitches(): void {
+    const specs = this.modeSwitchSpecs();
+    const wanted = new Set(specs.map((spec) => spec.subtype));
+
+    // A cached accessory can still carry switches from an earlier config. The
+    // ones the user has since dropped have to go, or they sit in the Home app
+    // forever as tiles that no longer control anything — and only ours are
+    // touched, hence the subtype prefixes.
+    for (const service of [...this.accessory.services]) {
+      const subtype = service.subtype ?? '';
+      const ours = subtype.startsWith(switchSubtypes.comode) || subtype.startsWith(switchSubtypes.mode);
+      if (service.UUID === this.platform.Service.Switch.UUID && ours && !wanted.has(subtype)) {
+        this.platform.log.info(`${this.accessory.displayName}: removing the switch for '${subtype}'.`);
+        this.accessory.removeService(service);
+      }
+    }
+
+    this.modeSwitches = [];
+
+    for (const spec of specs) {
+      if (!spec.available(this.status)) {
+        // Same rule as every other service here: nothing is published until the
+        // unit has actually reported the field it would be driving.
+        this.platform.log.info(
+          `${this.accessory.displayName}: not publishing a ${spec.label} switch; `
+          + 'the unit reports nothing for it yet.',
+        );
+        continue;
+      }
+
+      const name = `${this.accessory.displayName} ${spec.label}`;
+      const service = this.modeSwitchService(spec)
+        ?? this.accessory.addService(this.platform.Service.Switch, name, spec.subtype);
+      service.setCharacteristic(this.platform.Characteristic.Name, name);
+      service.getCharacteristic(this.platform.Characteristic.On)
+        .onGet(() => this.getModeSwitch(spec))
+        .onSet((value) => this.setModeSwitch(spec, value));
+
+      // Linked, like the filter: these belong to the air conditioner rather
+      // than standing on their own.
+      this.service.addLinkedService(service);
+      this.modeSwitches.push(spec);
+    }
+
+    if (this.modeSwitches.length) {
+      this.platform.log.info(
+        `${this.accessory.displayName}: switches for `
+        + `${this.modeSwitches.map((spec) => spec.label).join(', ')}.`,
+      );
+    }
+  }
+
+  /**
    * Some units only publish a reading once they are running, so a restart while
    * the AC was off would otherwise hide a capability until the next restart.
    * Promote absent -> present when a reading finally shows up.
@@ -450,6 +623,16 @@ export class SamsungRacAccessory {
         `${this.accessory.displayName}: an outdoor temperature is now reported by the unit.`,
       );
       this.configureOutdoorSensor();
+    }
+
+    // A unit that publishes no convenience mode until it has run would
+    // otherwise keep its switches hidden until the next restart.
+    const publishable = this.modeSwitchSpecs().filter((spec) => spec.available(this.status)).length;
+    if (publishable > this.modeSwitches.length) {
+      this.platform.log.info(
+        `${this.accessory.displayName}: a mode the unit had not reported is now available.`,
+      );
+      this.configureModeSwitches();
     }
   }
 
@@ -607,6 +790,11 @@ export class SamsungRacAccessory {
     return Math.max(-270, Math.min(100, value as number));
   }
 
+  private getModeSwitch(spec: ModeSwitch): CharacteristicValue {
+    this.assertResponsive();
+    return spec.isOn(this.status);
+  }
+
   private getFilterChange(): CharacteristicValue {
     this.assertResponsive();
     return this.filterChange();
@@ -703,6 +891,28 @@ export class SamsungRacAccessory {
     await this.apply(() => this.adapter.setWindDirection(direction));
   }
 
+  private async setModeSwitch(spec: ModeSwitch, value: CharacteristicValue): Promise<void> {
+    const on = value === true;
+    this.platform.log.debug(
+      `${this.accessory.displayName}: HomeKit asked for ${spec.label} ${on ? 'on' : 'off'}.`,
+    );
+
+    const write = spec.write(on);
+    if (!write) {
+      // Nothing to send: the unit is always in some mode, and we have nothing
+      // to put it back to. Push so the switch returns to what the unit says
+      // rather than sitting on a state that was never applied.
+      this.platform.log.debug(
+        `${this.accessory.displayName}: nothing to send for ${spec.label} off; `
+        + 'the unit reports no other mode to return to.',
+      );
+      this.push();
+      return;
+    }
+
+    await this.apply(write);
+  }
+
   /**
    * Run a write and adopt whatever the unit reports afterwards.
    *
@@ -769,6 +979,8 @@ export class SamsungRacAccessory {
    * Samsung app otherwise never reaches the Home app.
    */
   private push(): void {
+    this.rememberPlainMode();
+
     if (!this.responsive) {
       return;
     }
@@ -798,8 +1010,34 @@ export class SamsungRacAccessory {
         outdoor.updateCharacteristic(
           this.platform.Characteristic.CurrentTemperature, this.status.outdoorTemperature as number);
       }
+
+      // Every switch in a group reads the same field, so one change moves all
+      // of them: this is what makes turning Quiet on turn Comfort off in the
+      // Home app, and what reflects a change made on the remote.
+      for (const spec of this.modeSwitches) {
+        this.modeSwitchService(spec)
+          ?.updateCharacteristic(this.platform.Characteristic.On, spec.isOn(this.status));
+      }
     } catch (error) {
       this.platform.log.error(`${this.accessory.displayName}: could not update HomeKit: ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * Remember the mode to return to when a mode switch is switched off, taking
+   * it from the poll rather than only from our own writes — the unit may have
+   * been put into Dry from the Samsung app, and "off" still has to mean
+   * something sensible then.
+   */
+  private rememberPlainMode(): void {
+    const mode = this.status.mode;
+    if (!mode) {
+      return;
+    }
+    const stoodFor = this.platform.settings.modeSwitches
+      .some((name) => name.toLowerCase() === mode.toLowerCase());
+    if (!stoodFor) {
+      this.lastPlainMode = mode;
     }
   }
 
