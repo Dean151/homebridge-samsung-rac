@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-15
+
 ### Fixed
 
 - Heat was missing from the Home app on units that support it. The plugin built
@@ -25,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   since a whole degree Fahrenheit is 0.56 °C and a 1 °C step would put half its
   setpoints out of reach. Celsius units are unaffected.
 
+- A failure while discovering devices could take the whole Homebridge process
+  down with it, and one unit failing to set up its accessory aborted the units
+  after it. Discovery now catches, and each unit is set up on its own.
+
 ### Added
 
 - `devices[].heating`, to force heat support on or off for a unit whose own
@@ -39,6 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   temperature, and `outdoorTemperature` switches it to `celsius` or `off`.
   A value that cannot be a temperature is discarded rather than published, since
   `Mode.options` is a grab-bag of unrelated counters.
+
+- A debug-level trace of what actually crosses the wire: every request, the raw
+  device document once per start, and, on each poll, only the values that
+  changed — so the log reads as a history of what the unit did, including
+  changes made from the remote or the Samsung app, without a line per poll.
+
+- A warning when a unit stops answering, once per outage rather than once per
+  poll, and a line at normal volume when it answers again. A unit that dropped
+  out overnight is worth seeing without having turned debug on first.
 
 ## [0.1.1] - 2026-09-15
 
@@ -86,5 +101,6 @@ cloud, which is what makes the vane/swing control reachable at all.
 - Dry and fan-only modes are not exposed; HomeKit has no equivalent, so they
   report as Auto/Idle and are left alone.
 
+[0.2.0]: https://github.com/Dean151/homebridge-samsung-rac/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Dean151/homebridge-samsung-rac/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Dean151/homebridge-samsung-rac/releases/tag/v0.1.0
