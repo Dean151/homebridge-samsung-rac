@@ -1,4 +1,6 @@
-import { DEFAULT_SWING_DIRECTION, DEFAULT_UPDATE_INTERVAL, normaliseConfig } from '../../src/config';
+import {
+  DEFAULT_OUTDOOR_TEMPERATURE_UNIT, DEFAULT_SWING_DIRECTION, DEFAULT_UPDATE_INTERVAL, normaliseConfig,
+} from '../../src/config';
 
 function logger() {
   return { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -12,6 +14,33 @@ describe('normaliseConfig', () => {
       updateInterval: DEFAULT_UPDATE_INTERVAL,
       requestTimeoutMs: 5000,
       swingDirection: DEFAULT_SWING_DIRECTION,
+      outdoorTemperatureUnit: DEFAULT_OUTDOOR_TEMPERATURE_UNIT,
+    });
+  });
+
+  describe('the outdoor temperature setting', () => {
+    const settingFor = (outdoorTemperature: unknown, log = logger()) =>
+      normaliseConfig({ platform: 'x', outdoorTemperature } as never, log as never).outdoorTemperatureUnit;
+
+    it('defaults to Fahrenheit, the only behaviour seen on real hardware', () => {
+      expect(DEFAULT_OUTDOOR_TEMPERATURE_UNIT).toBe('F');
+      expect(settingFor(undefined)).toBe('F');
+    });
+
+    it('takes either scale, however it is written', () => {
+      expect(settingFor('fahrenheit')).toBe('F');
+      expect(settingFor('Celsius')).toBe('C');
+      expect(settingFor(' c ')).toBe('C');
+    });
+
+    it('switches the sensor off', () => {
+      expect(settingFor('off')).toBeNull();
+    });
+
+    it('falls back to the default rather than silently dropping the sensor', () => {
+      const log = logger();
+      expect(settingFor('kelvin', log)).toBe(DEFAULT_OUTDOOR_TEMPERATURE_UNIT);
+      expect(log.warn).toHaveBeenCalled();
     });
   });
 

@@ -20,12 +20,46 @@ export interface NormalisedConfig {
   requestTimeoutMs: number;
   /** What to write to Wind.direction when HomeKit asks for swing. */
   swingDirection: string;
+  /**
+   * How to read the unit's outdoor sensor, or null not to publish it at all.
+   * Not inferable from the unit's own scale — see RacStatusOptions.
+   */
+  outdoorTemperatureUnit: 'C' | 'F' | null;
   certificateUrl?: string;
 }
 
 export const DEFAULT_UPDATE_INTERVAL = 10;
 export const DEFAULT_REQUEST_TIMEOUT = 5;
 export const DEFAULT_SWING_DIRECTION = 'Up_And_Low';
+export const DEFAULT_OUTDOOR_TEMPERATURE_UNIT = 'F';
+
+/**
+ * 'fahrenheit' (the default, and the only behaviour observed on real hardware),
+ * 'celsius', or 'off' to leave the sensor out. Anything unrecognised falls back
+ * to the default rather than silently disabling a feature the user asked for.
+ */
+function toOutdoorUnit(value: unknown, log: Logging): 'C' | 'F' | null {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+  if (!raw) {
+    return DEFAULT_OUTDOOR_TEMPERATURE_UNIT;
+  }
+  if (raw === 'off' || raw === 'none' || raw === 'false') {
+    return null;
+  }
+  if (raw.startsWith('c')) {
+    return 'C';
+  }
+  if (raw.startsWith('f')) {
+    return 'F';
+  }
+
+  log.warn(
+    `Ignoring an unrecognised outdoorTemperature setting '${value}'; `
+    + `using ${DEFAULT_OUTDOOR_TEMPERATURE_UNIT === 'F' ? 'Fahrenheit' : 'Celsius'}.`,
+  );
+  return DEFAULT_OUTDOOR_TEMPERATURE_UNIT;
+}
 
 export function normaliseConfig(config: PlatformConfig, log: Logging): NormalisedConfig {
   const raw = Array.isArray(config.devices) ? (config.devices as unknown[]) : [];
@@ -64,6 +98,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     swingDirection: typeof config.swingDirection === 'string' && config.swingDirection.trim()
       ? config.swingDirection.trim()
       : DEFAULT_SWING_DIRECTION,
+    outdoorTemperatureUnit: toOutdoorUnit(config.outdoorTemperature, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,

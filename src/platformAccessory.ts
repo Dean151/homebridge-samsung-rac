@@ -113,6 +113,7 @@ export class SamsungRacAccessory {
     this.configureFanSpeed();
     this.configureSwing();
     this.configureFilter();
+    this.configureOutdoorSensor();
     this.configured = true;
 
     const interval = this.platform.settings.updateInterval;
@@ -275,6 +276,44 @@ export class SamsungRacAccessory {
     this.platform.log.info(`${this.accessory.displayName}: filter status available.`);
   }
 
+  private hasOutdoorReading(): boolean {
+    return Number.isFinite(this.status.outdoorTemperature);
+  }
+
+  /**
+   * The unit's outdoor sensor, as a temperature sensor of its own.
+   *
+   * Its scale is a config decision rather than something the document states —
+   * the reference unit reports this in Fahrenheit while reporting itself in
+   * Celsius — so by the time it reaches here it is already Celsius or already
+   * discarded. See RacStatusOptions.
+   */
+  private configureOutdoorSensor(): void {
+    const existing = this.accessory.getService(this.platform.Service.TemperatureSensor);
+
+    if (!this.hasOutdoorReading()) {
+      if (existing) {
+        this.accessory.removeService(existing);
+      }
+      this.platform.log.info(`${this.accessory.displayName}: no outdoor temperature reading.`);
+      return;
+    }
+
+    const service = existing ?? this.accessory.addService(this.platform.Service.TemperatureSensor);
+    service.setCharacteristic(this.platform.Characteristic.Name, `${this.accessory.displayName} Outdoor`);
+    service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+      .onGet(this.getOutdoorTemperature.bind(this));
+
+    // Deliberately NOT linked to the HeaterCooler, unlike the filter. A linked
+    // service reads as part of the control it hangs off; this is an independent
+    // measurement, and it is more useful as a tile of its own.
+
+    this.platform.log.info(
+      `${this.accessory.displayName}: outdoor temperature available `
+      + `(${this.status.outdoorTemperature}°C).`,
+    );
+  }
+
   /**
    * Some units only publish a reading once they are running, so a restart while
    * the AC was off would otherwise hide a capability until the next restart.
@@ -302,6 +341,13 @@ export class SamsungRacAccessory {
     if (!this.accessory.getService(this.platform.Service.FilterMaintenance) && this.hasFilterReading()) {
       this.platform.log.info(`${this.accessory.displayName}: filter status is now reported by the unit.`);
       this.configureFilter();
+    }
+
+    if (!this.accessory.getService(this.platform.Service.TemperatureSensor) && this.hasOutdoorReading()) {
+      this.platform.log.info(
+        `${this.accessory.displayName}: an outdoor temperature is now reported by the unit.`,
+      );
+      this.configureOutdoorSensor();
     }
   }
 
@@ -442,6 +488,21 @@ export class SamsungRacAccessory {
     return this.status.windDirection && this.status.windDirection !== swingOffDirection
       ? this.platform.Characteristic.SwingMode.SWING_ENABLED
       : this.platform.Characteristic.SwingMode.SWING_DISABLED;
+  }
+
+  private getOutdoorTemperature(): CharacteristicValue {
+    this.assertResponsive();
+
+    const value = this.status.outdoorTemperature;
+    if (!Number.isFinite(value)) {
+      // The service is only published once a reading exists, so losing one means
+      // the unit stopped reporting it. "No Response" beats inventing a value —
+      // and the service is never withdrawn, in case it comes back.
+      throw new this.platform.api.hap.HapStatusError(
+        this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE,
+      );
+    }
+    return Math.max(-270, Math.min(100, value as number));
   }
 
   private getFilterChange(): CharacteristicValue {
@@ -629,6 +690,12 @@ export class SamsungRacAccessory {
 
       const filter = this.accessory.getService(this.platform.Service.FilterMaintenance);
       filter?.updateCharacteristic(this.platform.Characteristic.FilterChangeIndication, this.filterChange());
+
+      const outdoor = this.accessory.getService(this.platform.Service.TemperatureSensor);
+      if (outdoor && this.hasOutdoorReading()) {
+        outdoor.updateCharacteristic(
+          this.platform.Characteristic.CurrentTemperature, this.status.outdoorTemperature as number);
+      }
     } catch (error) {
       this.platform.log.error(`${this.accessory.displayName}: could not update HomeKit: ${messageOf(error)}`);
     }

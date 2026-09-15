@@ -48,6 +48,20 @@ export interface RacDevicesResponse {
   Devices?: RacDeviceDocument[];
 }
 
+export interface RacStatusOptions {
+  /**
+   * How to read `Mode.options.OutdoorTemp`, or null to leave it out entirely.
+   *
+   * Deliberately NOT inferred from `Temperatures[].unit`. The reference unit
+   * reports its own temperatures in Celsius and its outdoor sensor in
+   * Fahrenheit, in the same document, with only the former labelled — so the
+   * two scales are independent and one says nothing about the other.
+   * Fahrenheit is the default because it is the only behaviour ever observed,
+   * but for any other model that is a guess, which is why it is configurable.
+   */
+  outdoorTemperatureUnit?: TemperatureUnit | null;
+}
+
 /** Everything the HomeKit layer is allowed to know about the unit. */
 export interface RacStatus {
   active: boolean;
@@ -69,6 +83,11 @@ export interface RacStatus {
   speedLevel?: number;
   maxSpeedLevel?: number;
   filterAlarm: boolean;
+  /**
+   * The outdoor sensor reading in Celsius, absent when the unit does not
+   * publish one or publishes something that cannot be a temperature.
+   */
+  outdoorTemperature?: number;
   /** The unit's own resource list, e.g. ['Alarms', 'Mode', 'Wind', ...]. */
   resources: string[];
   options: Record<string, string>;
@@ -100,12 +119,46 @@ function firstFinite(...values: (number | undefined)[]): number | undefined {
   return values.find((value) => Number.isFinite(value));
 }
 
-export function toRacStatus(device: RacDeviceDocument): RacStatus {
+/**
+ * Outdoor temperatures a room air conditioner could plausibly be reporting, in
+ * Celsius. `Mode.options` is a grab-bag of unrelated counters — `UsagesDB_254`,
+ * `OptionCode_53432` — so a unit that does not publish OutdoorTemp at all, or
+ * publishes something that is not a temperature, must not reach HomeKit as a
+ * confident reading of 123 °C.
+ */
+const plausibleOutdoorCelsius = { min: -60, max: 70 };
+
+function outdoorTemperatureFrom(
+  options: Record<string, string>,
+  unit: TemperatureUnit | null | undefined,
+): number | undefined {
+  if (unit === null) {
+    return undefined;
+  }
+
+  const raw = options.OutdoorTemp?.trim();
+  if (!raw) {
+    return undefined;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+
+  const celsius = toCelsius(value, unit ?? 'F');
+  return celsius >= plausibleOutdoorCelsius.min && celsius <= plausibleOutdoorCelsius.max
+    ? celsius
+    : undefined;
+}
+
+export function toRacStatus(device: RacDeviceDocument, settings: RacStatusOptions = {}): RacStatus {
   const temperature = device.Temperatures?.[0];
 
   // Normalise to Celsius here, at the transport boundary, so that nothing above
   // this file has to remember which scale a given unit reports in.
   const unit = normaliseTemperatureUnit(temperature?.unit);
+  const modeOptions = parseOptions(device.Mode?.options);
 
   return {
     active: device.Operation?.power === 'On',
@@ -122,8 +175,9 @@ export function toRacStatus(device: RacDeviceDocument): RacStatus {
     speedLevel: firstFinite(device.Wind?.speedLevel),
     maxSpeedLevel: firstFinite(device.Wind?.maxSpeedLevel),
     filterAlarm: (device.Alarms ?? []).some((alarm) => alarm.code === 'FilterAlarm'),
+    outdoorTemperature: outdoorTemperatureFrom(modeOptions, settings.outdoorTemperatureUnit),
     resources: device.resources ?? [],
-    options: parseOptions(device.Mode?.options),
+    options: modeOptions,
     connected: device.connected !== false,
     id: device.id ?? '0',
     uuid: device.uuid,

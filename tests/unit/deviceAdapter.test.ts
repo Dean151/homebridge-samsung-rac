@@ -261,7 +261,7 @@ describe('a unit configured in Fahrenheit', () => {
 
     const status = await adapter.getStatus();
     expect(status.temperatureUnit).toBe('F');
-    expect(status.currentTemperature).toBeCloseTo(21.7, 5);
+    expect(status.currentTemperature).toBe(21.7);
     expect(status.targetTemperature).toBe(24);
     expect(status.minSetpoint).toBe(15.5);
     expect(status.maxSetpoint).toBe(30);

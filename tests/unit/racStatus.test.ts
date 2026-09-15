@@ -58,7 +58,7 @@ describe('toRacStatus', () => {
     });
 
     expect(converted.temperatureUnit).toBe('F');
-    expect(converted.currentTemperature).toBeCloseTo(21.7, 5);
+    expect(converted.currentTemperature).toBe(21.7);
     expect(converted.targetTemperature).toBe(24);
     expect(converted.minSetpoint).toBe(15.5);
     expect(converted.maxSetpoint).toBe(30);
@@ -82,6 +82,54 @@ describe('toRacStatus', () => {
   it('parses the flat Mode.options array', () => {
     expect(status.options.OutdoorTemp).toBe('74');
     expect(status.options.FilterAlarmTime).toBe('500');
+  });
+
+  describe('the outdoor sensor', () => {
+    /** The reference unit's own options array, with OutdoorTemp swapped out. */
+    const withOutdoor = (value: string) => ({
+      Mode: { options: ['Comode_Off', `OutdoorTemp_${value}`, 'Volume_100'] },
+    });
+
+    it('reads Fahrenheit by default, which is what the reference unit reports', () => {
+      // 2026-09-15: the unit said 71 while it was genuinely 21°C outside.
+      expect(toRacStatus(withOutdoor('71')).outdoorTemperature).toBe(21.7);
+    });
+
+    it('reads Celsius when told to, for a unit that differs', () => {
+      expect(toRacStatus(withOutdoor('21'), { outdoorTemperatureUnit: 'C' }).outdoorTemperature)
+        .toBe(21);
+    });
+
+    it('does not infer the scale from the unit\'s own', () => {
+      // The reference unit reports itself in Celsius and this in Fahrenheit, in
+      // one document, with only the former labelled. Reading Temperatures[].unit
+      // to decide would get this exactly backwards.
+      const status = toRacStatus({
+        Temperatures: [{ id: '0', current: 23, desired: 24, unit: 'Celsius' }],
+        ...withOutdoor('71'),
+      });
+
+      expect(status.temperatureUnit).toBe('C');
+      expect(status.outdoorTemperature).toBe(21.7);
+    });
+
+    it('leaves it out entirely when switched off', () => {
+      expect(toRacStatus(withOutdoor('71'), { outdoorTemperatureUnit: null }).outdoorTemperature)
+        .toBeUndefined();
+    });
+
+    it('leaves it out when the unit publishes no such option', () => {
+      expect(toRacStatus({ Mode: { options: ['Comode_Off'] } }).outdoorTemperature).toBeUndefined();
+      expect(toRacStatus({}).outdoorTemperature).toBeUndefined();
+    });
+
+    it('rejects a value that cannot be an outdoor temperature', () => {
+      // Mode.options is a grab-bag of unrelated counters, so a unit using this
+      // key for something else must not surface as a confident 123°C.
+      expect(toRacStatus(withOutdoor('254')).outdoorTemperature).toBeUndefined();
+      expect(toRacStatus(withOutdoor('nonsense')).outdoorTemperature).toBeUndefined();
+      expect(toRacStatus(withOutdoor('')).outdoorTemperature).toBeUndefined();
+    });
   });
 
   it('reports no filter alarm when the unit lists none', () => {

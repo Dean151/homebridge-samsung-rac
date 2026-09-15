@@ -307,7 +307,76 @@ describe('SamsungRacAccessory', () => {
     });
   });
 
+  describe('outdoor temperature', () => {
+    it('publishes a temperature sensor when the unit reports one', async () => {
+      const { accessory } = await build({ status: { outdoorTemperature: 21.7 } });
+
+      expect(accessory.getService(Service.TemperatureSensor)
+        ?.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.())
+        .toBe(21.7);
+    });
+
+    it('leaves it unlinked, so it reads as a tile rather than part of the control', async () => {
+      const { accessory, heaterCooler } = await build({ status: { outdoorTemperature: 21.7 } });
+
+      expect(heaterCooler.linkedServices)
+        .not.toContain(accessory.getService(Service.TemperatureSensor));
+    });
+
+    it('stays away when the unit reports no outdoor temperature', async () => {
+      const { accessory } = await build();
+      expect(accessory.getService(Service.TemperatureSensor)).toBeUndefined();
+    });
+
+    it('keeps the indoor reading on the heater-cooler untouched', async () => {
+      // Two temperatures on one accessory: getting them crossed would show the
+      // outdoors as the room temperature the setpoint is chasing.
+      const { accessory, heaterCooler } = await build({
+        status: { currentTemperature: 23, outdoorTemperature: 21.7 },
+      });
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(23);
+      expect(accessory.getService(Service.TemperatureSensor)
+        ?.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.())
+        .toBe(21.7);
+    });
+
+    it('pushes a change the unit made on its own', async () => {
+      const { accessory, adapter, setStatus } = await build({ status: { outdoorTemperature: 21.7 } });
+
+      setStatus({ outdoorTemperature: 18.3 });
+      await pollOnce(adapter.getStatus);
+
+      expect(accessory.getService(Service.TemperatureSensor)
+        ?.findCharacteristic(Characteristic.CurrentTemperature)?.value)
+        .toBe(18.3);
+    });
+
+    it('reports No Response rather than 0°C if the reading disappears', async () => {
+      const { accessory, adapter, setStatus } = await build({ status: { outdoorTemperature: 21.7 } });
+      const sensor = accessory.getService(Service.TemperatureSensor);
+
+      setStatus({ outdoorTemperature: undefined });
+      await pollOnce(adapter.getStatus);
+
+      expect(() => sensor?.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.())
+        .toThrow(FakeHapStatusError);
+      // Never withdrawn, in case the unit starts reporting it again.
+      expect(accessory.getService(Service.TemperatureSensor)).toBeDefined();
+    });
+  });
+
   describe('late capabilities', () => {
+    it('adds the outdoor sensor once the unit starts reporting one', async () => {
+      const { accessory, adapter, setStatus } = await build();
+      expect(accessory.getService(Service.TemperatureSensor)).toBeUndefined();
+
+      setStatus({ outdoorTemperature: 21.7 });
+      await pollOnce(adapter.getStatus);
+
+      expect(accessory.getService(Service.TemperatureSensor)).toBeDefined();
+    });
+
     it('adds swing once the unit starts reporting a vane position', async () => {
       const { heaterCooler, adapter, setStatus } = await build({ status: { windDirection: undefined } });
       expect(heaterCooler.findCharacteristic(Characteristic.SwingMode)).toBeUndefined();

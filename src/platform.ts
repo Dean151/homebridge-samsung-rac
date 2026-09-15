@@ -185,7 +185,10 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     const accessory = existing ?? new this.api.platformAccessory(displayName, uuid);
     accessory.context = { ...accessory.context, ...context };
 
-    const adapter = new DeviceAdapter(api, deviceId, this.log, { label: displayName });
+    const adapter = new DeviceAdapter(api, deviceId, this.log, {
+      label: displayName,
+      outdoorTemperatureUnit: this.settings.outdoorTemperatureUnit,
+    });
 
     // Populate before HomeKit ever sees the accessory, so its first look
     // already has real values rather than placeholders.

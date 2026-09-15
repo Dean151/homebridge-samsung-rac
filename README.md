@@ -36,6 +36,7 @@ A single `HeaterCooler` accessory per unit:
 | Fan speed | `Wind.speedLevel` / `Wind.maxSpeedLevel` |
 | Swing | `Wind.direction` |
 | Filter indicator | the `FilterAlarm` entry in `Alarms` |
+| Outdoor temperature | `Mode.options.OutdoorTemp`, as its own sensor |
 
 Dry and fan-only modes have no HomeKit equivalent. The plugin reports them as
 Auto/Idle and leaves them alone rather than overwriting a mode you chose in the
@@ -46,6 +47,13 @@ HomeKit accepts — what you see in the Home app is your phone's own display
 setting, independent of the unit's. Such a unit is offered half-degree Celsius
 steps rather than whole ones, because a whole degree Fahrenheit is 0.56 °C and a
 1 °C step would put half of its setpoints out of reach.
+
+The outdoor sensor is a tile of its own rather than part of the air conditioner
+control. **Which scale it is in is stated nowhere**, and is independent of the
+unit's own setting: the reference unit reports itself in Celsius and this in
+Fahrenheit, in the same document, with only the former labelled. Fahrenheit is
+the default for that reason. If the tile reads far too cold, set
+`outdoorTemperature` to `celsius`; `off` hides it.
 
 A service only appears once the unit has actually published a reading for it, and
 is never withdrawn afterwards — some units publish nothing until they are running.
@@ -184,7 +192,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
     { "name": "Lounge", "host": "10.0.0.9" }
   ],
   "updateInterval": 10,
-  "swingDirection": "Up_And_Low"
+  "swingDirection": "Up_And_Low",
+  "outdoorTemperature": "fahrenheit"
 }
 ```
 
@@ -195,6 +204,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `devices[].token` | — | Only if you paired outside this plugin. |
 | `updateInterval` | `10` | Seconds between polls; minimum 5. |
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
+| `outdoorTemperature` | `fahrenheit` | The scale the unit's outdoor sensor reports in, or `off` to hide it. Not the same setting as the unit's own scale. |
 | `requestTimeout` | `5` | Seconds. |
 | `certificateUrl` | community URL | Only if you mirror the certificate yourself. |
 

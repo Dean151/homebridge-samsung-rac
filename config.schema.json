@@ -52,6 +52,17 @@
         ],
         "description": "What to set the vane to when swing is switched on in HomeKit. On a TP6X_RAC_16K only Up_And_Low works: Vertical and SwingUD are rejected outright, and All is accepted and then ignored. The others are kept for units that differ; the log says if yours refuses the one you pick."
       },
+      "outdoorTemperature": {
+        "title": "Outdoor temperature sensor",
+        "type": "string",
+        "default": "fahrenheit",
+        "oneOf": [
+          { "title": "Show it \u2014 unit reports Fahrenheit (confirmed on TP6X_RAC_16K)", "enum": ["fahrenheit"] },
+          { "title": "Show it \u2014 unit reports Celsius", "enum": ["celsius"] },
+          { "title": "Do not show it", "enum": ["off"] }
+        ],
+        "description": "Publishes the unit's outdoor sensor as a temperature tile of its own. Which scale it is in is stated nowhere in what the unit reports, and is independent of the unit's own setting: a TP6X_RAC_16K reports itself in Celsius and this in Fahrenheit, measured against a known outdoor temperature. Fahrenheit is the default for that reason. If your tile reads far too cold, your unit reports Celsius here \u2014 switch it."
+      },
       "requestTimeout": {
         "title": "Request timeout (seconds)",
         "type": "integer",
@@ -74,6 +85,7 @@
     },
     "updateInterval",
     "swingDirection",
+    "outdoorTemperature",
     {
       "type": "fieldset",
       "title": "Advanced",

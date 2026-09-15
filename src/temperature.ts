@@ -40,9 +40,18 @@ export function setpointStep(unit: TemperatureUnit): number {
   return unit === 'F' ? 0.5 : 1;
 }
 
-/** Round to a grid, avoiding the float dust that makes 23.5 read as 23.499999. */
+/**
+ * Round to a grid, in integer space.
+ *
+ * The obvious `Math.round(value / step) * step` reintroduces exactly what it is
+ * meant to remove: 71°F is 21.666…°C, which that turns into 21.700000000000003
+ * rather than 21.7 — and that is the number HomeKit and the debug log then get.
+ * Scaling by 1/step instead keeps the arithmetic on whole numbers until the
+ * final divide.
+ */
 function roundTo(value: number, step: number): number {
-  return Math.round(value / step) * step;
+  const inverse = Math.round(1 / step);
+  return Math.round(value * inverse) / inverse;
 }
 
 /**

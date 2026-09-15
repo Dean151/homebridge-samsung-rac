@@ -1,5 +1,5 @@
 import type { Logging } from 'homebridge';
-import { devicesFrom, RacDevicesResponse, RacStatus, toRacStatus } from './racStatus';
+import { devicesFrom, RacDevicesResponse, RacStatus, RacStatusOptions, toRacStatus } from './racStatus';
 import { fromCelsius, toCelsiusSetpoint, type TemperatureUnit } from './temperature';
 import { LocalApi } from './transport/localApi';
 
@@ -53,6 +53,8 @@ export interface DeviceAdapterOptions {
   dedupMs?: number;
   /** Minimum spacing between writes. */
   minWriteIntervalMs?: number;
+  /** How to read the unit's outdoor sensor; see RacStatusOptions. */
+  outdoorTemperatureUnit?: RacStatusOptions['outdoorTemperatureUnit'];
 }
 
 export class DeviceAdapter {
@@ -78,6 +80,7 @@ export class DeviceAdapter {
   private readonly dedupMs: number;
   private readonly minWriteIntervalMs: number;
   private readonly label: string;
+  private readonly statusOptions: RacStatusOptions;
 
   constructor(
     private readonly api: LocalApi,
@@ -91,6 +94,7 @@ export class DeviceAdapter {
     this.dedupMs = options.dedupMs ?? 1000;
     this.minWriteIntervalMs = options.minWriteIntervalMs ?? 250;
     this.label = options.label ?? api.description;
+    this.statusOptions = { outdoorTemperatureUnit: options.outdoorTemperatureUnit };
   }
 
   // --- reads ---------------------------------------------------------------
@@ -117,7 +121,7 @@ export class DeviceAdapter {
         this.log.debug(`${this.label} raw device document: ${JSON.stringify(device)}`);
       }
 
-      const status = toRacStatus(device);
+      const status = toRacStatus(device, this.statusOptions);
       this.logStatusChange(status);
       this.cached = status;
       this.cachedAt = now;
@@ -350,6 +354,7 @@ export class DeviceAdapter {
 const trackedFields = [
   'active', 'mode', 'currentTemperature', 'targetTemperature',
   'speedLevel', 'windDirection', 'filterAlarm', 'connected',
+  'outdoorTemperature',
 ] as const satisfies readonly (keyof RacStatus)[];
 
 function format(value: unknown): string {

@@ -18,9 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `OutdoorTemp` is confirmed to be reported in Fahrenheit, measured against a
-  known outdoor temperature. Nothing consumes it yet; it is the groundwork for
-  exposing it as a separate temperature sensor.
+- The unit's outdoor temperature sensor, as a tile of its own, from the
+  `OutdoorTemp` entry in `Mode.options`. Which scale that is in is stated nowhere
+  and is independent of the unit's own setting — the reference unit reports
+  itself in Celsius and this in Fahrenheit, in one document, with only the former
+  labelled — so Fahrenheit is the default, confirmed against a known outdoor
+  temperature, and `outdoorTemperature` switches it to `celsius` or `off`.
+  A value that cannot be a temperature is discarded rather than published, since
+  `Mode.options` is a grab-bag of unrelated counters.
 
 ## [0.1.1] - 2026-09-15
 

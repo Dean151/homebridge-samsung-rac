@@ -33,8 +33,17 @@ describe('toCelsius', () => {
 
   it('converts the reading that settled the OutdoorTemp question', () => {
     // 2026-09-15: the unit reported 71 while it was genuinely 21°C outside.
-    expect(toCelsius(71, 'F')).toBeCloseTo(21.7, 5);
-    expect(toCelsius(74, 'F')).toBeCloseTo(23.3, 5);
+    expect(toCelsius(71, 'F')).toBe(21.7);
+    expect(toCelsius(74, 'F')).toBe(23.3);
+  });
+
+  it('does not hand HomeKit binary float dust', () => {
+    // 71°F is 21.666…°C. Rounding it as `Math.round(v / 0.1) * 0.1` yields
+    // 21.700000000000003, and that is the number the log and HomeKit then show.
+    for (let f = -40; f <= 130; f++) {
+      const celsius = toCelsius(f, 'F');
+      expect(String(celsius)).toBe(String(Number(celsius.toFixed(1))));
+    }
   });
 
   it('passes NaN through rather than inventing a temperature', () => {

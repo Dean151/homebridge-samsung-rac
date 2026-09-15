@@ -40,6 +40,7 @@ export const Service = {
   AccessoryInformation: { UUID: 'AccessoryInformation' } as ServiceClass,
   HeaterCooler: { UUID: 'HeaterCooler' } as ServiceClass,
   FilterMaintenance: { UUID: 'FilterMaintenance' } as ServiceClass,
+  TemperatureSensor: { UUID: 'TemperatureSensor' } as ServiceClass,
 };
 
 export class FakeCharacteristic {
