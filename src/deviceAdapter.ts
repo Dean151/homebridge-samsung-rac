@@ -1,5 +1,6 @@
 import type { Logging } from 'homebridge';
 import { devicesFrom, RacDevicesResponse, RacStatus, toRacStatus } from './racStatus';
+import { fromCelsius, toCelsiusSetpoint, type TemperatureUnit } from './temperature';
 import { LocalApi } from './transport/localApi';
 
 /**
@@ -25,6 +26,18 @@ interface Change {
   body: unknown;
   requested: unknown;
   read: (status: RacStatus) => unknown;
+  /**
+   * Recompute `body` and `requested` against a fresh status, for a write whose
+   * payload depends on something the unit reports — the scale its temperatures
+   * are in, so far.
+   *
+   * This runs INSIDE the queued task, after applyChange() has already claimed
+   * the write's place in the queue. Doing the same work in the setter would
+   * mean awaiting before joining the queue, letting a setpoint slip behind a
+   * power write that queued synchronously — and this hardware discards every
+   * write except power while the unit is off.
+   */
+  resolve?: (status: RacStatus) => Pick<Change, 'body' | 'requested'>;
 }
 
 export interface DeviceAdapterOptions {
@@ -154,13 +167,47 @@ export class DeviceAdapter {
     });
   }
 
-  setTargetTemperature(temperature: number, temperatureId = '0'): Promise<ApplyResult> {
+  /**
+   * @param celsius the setpoint in Celsius, which is what everything above this
+   * file speaks. A unit configured in Fahrenheit is written in Fahrenheit.
+   */
+  setTargetTemperature(celsius: number, temperatureId = '0'): Promise<ApplyResult> {
+    // `desired` is what goes over the wire, in the unit's own scale; `requested`
+    // is what that will read back as once parsed, which is what the read-back
+    // check compares against. They differ on a Fahrenheit unit: its grid is
+    // whole degrees F, coarser in places than the 0.5 °C HomeKit is offered, so
+    // asking for 22.5 °C can only land on 22.8 °C. Comparing the read-back
+    // against what we asked for would report that as a silently discarded write
+    // — the one failure this plugin exists to detect — when the unit obeyed.
+    const inUnit = (unit: TemperatureUnit) => {
+      const desired = fromCelsius(celsius, unit);
+      return {
+        desired,
+        body: { Temperatures: [{ id: temperatureId, desired }] },
+        requested: toCelsiusSetpoint(desired, unit) as number,
+      };
+    };
+
+    const celsiusUnit = inUnit('C');
+
     return this.applyChange({
       field: 'Temperatures[0].desired',
-      resource: `/devices/${this.deviceId}/temperatures/${temperatureId}`,
-      body: { Temperatures: [{ id: temperatureId, desired: temperature }] },
-      requested: temperature,
       read: (status) => status.targetTemperature,
+      resource: `/devices/${this.deviceId}/temperatures/${temperatureId}`,
+      // Celsius unless the unit says otherwise, which only a status read can
+      // tell us — so resolve() settles it inside the write queue.
+      body: celsiusUnit.body,
+      requested: celsiusUnit.requested,
+      resolve: ({ temperatureUnit }) => {
+        const { desired, body, requested } = inUnit(temperatureUnit);
+        if (temperatureUnit !== 'C') {
+          this.log.debug(
+            `${this.label} setpoint ${celsius}°C -> ${desired}°${temperatureUnit} `
+            + `(reads back as ${requested}°C).`,
+          );
+        }
+        return { body, requested };
+      },
     });
   }
 
@@ -197,7 +244,13 @@ export class DeviceAdapter {
     return run;
   }
 
-  private async write(change: Change): Promise<ApplyResult> {
+  private async write(requested: Change): Promise<ApplyResult> {
+    // Resolve before anything reads body or requested — including the dedup key,
+    // which must key on the value that will actually go over the wire.
+    const change: Change = requested.resolve
+      ? { ...requested, ...requested.resolve(await this.getStatus()) }
+      : requested;
+
     // The dedup key MUST include the value. Keying on the target alone makes
     // every slider drag send its first value and swallow the rest, which is
     // exactly the bug this plugin's predecessor shipped.

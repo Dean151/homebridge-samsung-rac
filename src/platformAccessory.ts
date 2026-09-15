@@ -2,6 +2,7 @@ import type { Characteristic, CharacteristicValue, PlatformAccessory, Service, W
 import type { SamsungRacPlatform } from './platform';
 import type { ApplyResult, DeviceAdapter } from './deviceAdapter';
 import type { RacStatus } from './racStatus';
+import { setpointStep } from './temperature';
 
 /**
  * Device modes that run the unit without driving towards a setpoint. HomeKit's
@@ -43,6 +44,8 @@ export class SamsungRacAccessory {
 
   private minTemp = 16;
   private maxTemp = 30;
+  /** 1 °C, or 0.5 °C for a unit that stores whole degrees Fahrenheit. */
+  private setpointStep = 1;
   private speedStep = 0;
   private maxSpeedLevel = 0;
   private loggedHeatingCap = false;
@@ -146,9 +149,17 @@ export class SamsungRacAccessory {
 
     this.minTemp = min;
     this.maxTemp = max;
+    this.setpointStep = setpointStep(this.status.temperatureUnit);
+
+    if (this.status.temperatureUnit === 'F') {
+      this.platform.log.info(
+        `${this.accessory.displayName}: the unit reports Fahrenheit; converting to Celsius for HomeKit `
+        + `(range ${min}-${max}°C, ${this.setpointStep}°C steps).`,
+      );
+    }
 
     this.service.getCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature)
-      .setProps({ minValue: min, maxValue: max, minStep: 1 });
+      .setProps({ minValue: min, maxValue: max, minStep: this.setpointStep });
 
     const heatingMax = Math.min(hapHeatingThresholdMax, max);
     if (heatingMax < max && !this.loggedHeatingCap) {
@@ -159,7 +170,11 @@ export class SamsungRacAccessory {
     }
 
     this.service.getCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature)
-      .setProps({ minValue: Math.max(hapHeatingThresholdMin, min), maxValue: heatingMax, minStep: 1 });
+      .setProps({
+        minValue: Math.max(hapHeatingThresholdMin, min),
+        maxValue: heatingMax,
+        minStep: this.setpointStep,
+      });
   }
 
   /**
@@ -490,7 +505,11 @@ export class SamsungRacAccessory {
   }
 
   private async setTargetTemperature(value: CharacteristicValue): Promise<void> {
-    const temperature = Math.round(clamp(value as number, this.minTemp, this.maxTemp, this.minTemp));
+    // Snap to the step advertised in applySetpointRange, not to a whole degree:
+    // on a Fahrenheit unit that grid is 0.5 °C, and rounding to 1 °C here would
+    // throw away half the setpoints the unit can actually hold.
+    const clamped = clamp(value as number, this.minTemp, this.maxTemp, this.minTemp);
+    const temperature = Math.round(clamped / this.setpointStep) * this.setpointStep;
     this.platform.log.debug(
       `${this.accessory.displayName}: HomeKit asked for ${value}°C, sending ${temperature}°C.`,
     );
@@ -658,5 +677,8 @@ function emptyStatus(): RacStatus {
     connected: false,
     id: '0',
     temperatureId: '0',
+    // Celsius until a real reading says otherwise; nothing is published from
+    // this placeholder anyway, the accessory reports "No Response" instead.
+    temperatureUnit: 'C',
   };
 }

@@ -45,6 +45,35 @@ describe('toRacStatus', () => {
     });
   });
 
+  it('records the scale the reference unit reports in', () => {
+    expect(status.temperatureUnit).toBe('C');
+  });
+
+  it('converts a Fahrenheit unit to Celsius, which is all HomeKit accepts', () => {
+    // Nothing above the transport should ever see a Fahrenheit number. Passed
+    // through unconverted these look plausible rather than absurd: 71 shown as
+    // 71°C is wrong by fifty degrees but renders perfectly happily.
+    const converted = toRacStatus({
+      Temperatures: [{ id: '0', current: 71, desired: 75, minimum: 60, maximum: 86, unit: 'Fahrenheit' }],
+    });
+
+    expect(converted.temperatureUnit).toBe('F');
+    expect(converted.currentTemperature).toBeCloseTo(21.7, 5);
+    expect(converted.targetTemperature).toBe(24);
+    expect(converted.minSetpoint).toBe(15.5);
+    expect(converted.maxSetpoint).toBe(30);
+  });
+
+  it('assumes Celsius when the unit does not say, and changes nothing', () => {
+    const unlabelled = toRacStatus({
+      Temperatures: [{ id: '0', current: 23, desired: 24, minimum: 16, maximum: 30 }],
+    });
+
+    expect(unlabelled.temperatureUnit).toBe('C');
+    expect(unlabelled.currentTemperature).toBe(23);
+    expect(unlabelled.targetTemperature).toBe(24);
+  });
+
   it('exposes the unit resource list, which is what gates optional services', () => {
     expect(status.resources).toContain('Alarms');
     expect(status.resources).toContain('Wind');

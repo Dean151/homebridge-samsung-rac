@@ -12,6 +12,7 @@ const baseStatus: RacStatus = {
   currentTemperature: 23,
   targetTemperature: 24,
   temperatureId: '0',
+  temperatureUnit: 'C',
   minSetpoint: 16,
   maxSetpoint: 30,
   windDirection: 'Fix',
@@ -127,6 +128,37 @@ describe('SamsungRacAccessory', () => {
     it('reports the measured temperature without clamping it to the setpoint range', async () => {
       const { heaterCooler } = await build({ status: { currentTemperature: 9 } });
       expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(9);
+    });
+
+    it('offers half-degree steps on a Fahrenheit unit, so every setpoint is reachable', async () => {
+      // A whole degree F is 0.56°C. A 1°C step would put roughly half the
+      // values the unit can actually hold out of the user's reach.
+      const { heaterCooler } = await build({
+        status: { temperatureUnit: 'F', minSetpoint: 15.5, maxSetpoint: 30 },
+      });
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CoolingThresholdTemperature)?.props)
+        .toMatchObject({ minValue: 15.5, maxValue: 30, minStep: 0.5 });
+    });
+
+    it('sends a Fahrenheit unit a setpoint on the half-degree grid, not a whole one', async () => {
+      const { heaterCooler, adapter } = await build({
+        status: { temperatureUnit: 'F', minSetpoint: 15.5, maxSetpoint: 30 },
+      });
+
+      await heaterCooler.findCharacteristic(Characteristic.CoolingThresholdTemperature)?.setHandler?.(22.5);
+
+      // Rounding to a whole degree here would discard the finer grid the
+      // characteristic was just told about.
+      expect(adapter.setTargetTemperature).toHaveBeenCalledWith(22.5, '0');
+    });
+
+    it('still sends whole degrees to a Celsius unit', async () => {
+      const { heaterCooler, adapter } = await build();
+
+      await heaterCooler.findCharacteristic(Characteristic.CoolingThresholdTemperature)?.setHandler?.(22.4);
+
+      expect(adapter.setTargetTemperature).toHaveBeenCalledWith(22, '0');
     });
 
     it('keeps the configured range when the unit reports an unusable one', async () => {

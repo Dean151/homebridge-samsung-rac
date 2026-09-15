@@ -5,6 +5,23 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- A unit configured in Fahrenheit had its temperatures passed to HomeKit as
+  though they were Celsius, so a room at 71 °F read as 71 °C and every setpoint
+  written to it was wrong by the same margin. Temperatures are now converted at
+  the transport boundary, and such a unit is given half-degree Celsius steps,
+  since a whole degree Fahrenheit is 0.56 °C and a 1 °C step would put half its
+  setpoints out of reach. Celsius units are unaffected.
+
+### Added
+
+- `OutdoorTemp` is confirmed to be reported in Fahrenheit, measured against a
+  known outdoor temperature. Nothing consumes it yet; it is the groundwork for
+  exposing it as a separate temperature sensor.
+
 ## [0.1.1] - 2026-09-15
 
 ### Fixed

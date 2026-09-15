@@ -6,6 +6,13 @@
  * tests/fixtures/devices.json and is the fixture for the parser tests.
  */
 
+import {
+  normaliseTemperatureUnit,
+  toCelsius,
+  toCelsiusSetpoint,
+  type TemperatureUnit,
+} from './temperature';
+
 export interface RacAlarm {
   alarmType?: string;
   code?: string;
@@ -52,6 +59,12 @@ export interface RacStatus {
   maxSetpoint?: number;
   /** Which entry of `Temperatures` the setpoint belongs to; usually '0'. */
   temperatureId: string;
+  /**
+   * The scale the UNIT stores its temperatures in. Every temperature above is
+   * already Celsius regardless; this is here so the write path can convert
+   * back. See ./temperature.ts.
+   */
+  temperatureUnit: TemperatureUnit;
   windDirection?: string;
   speedLevel?: number;
   maxSpeedLevel?: number;
@@ -90,16 +103,21 @@ function firstFinite(...values: (number | undefined)[]): number | undefined {
 export function toRacStatus(device: RacDeviceDocument): RacStatus {
   const temperature = device.Temperatures?.[0];
 
+  // Normalise to Celsius here, at the transport boundary, so that nothing above
+  // this file has to remember which scale a given unit reports in.
+  const unit = normaliseTemperatureUnit(temperature?.unit);
+
   return {
     active: device.Operation?.power === 'On',
     // `modes` is the active mode list; the unit reports exactly one.
     mode: device.Mode?.modes?.[0] ?? '',
     supportedModes: device.Mode?.supportedModes ?? [],
-    currentTemperature: temperature?.current ?? NaN,
-    targetTemperature: temperature?.desired ?? NaN,
+    currentTemperature: toCelsius(temperature?.current ?? NaN, unit),
+    targetTemperature: toCelsiusSetpoint(temperature?.desired, unit) ?? NaN,
     temperatureId: temperature?.id ?? '0',
-    minSetpoint: firstFinite(temperature?.minimum),
-    maxSetpoint: firstFinite(temperature?.maximum),
+    temperatureUnit: unit,
+    minSetpoint: toCelsiusSetpoint(firstFinite(temperature?.minimum), unit),
+    maxSetpoint: toCelsiusSetpoint(firstFinite(temperature?.maximum), unit),
     windDirection: device.Wind?.direction,
     speedLevel: firstFinite(device.Wind?.speedLevel),
     maxSpeedLevel: firstFinite(device.Wind?.maxSpeedLevel),

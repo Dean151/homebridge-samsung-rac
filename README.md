@@ -41,6 +41,12 @@ Dry and fan-only modes have no HomeKit equivalent. The plugin reports them as
 Auto/Idle and leaves them alone rather than overwriting a mode you chose in the
 Samsung app.
 
+A unit set to Fahrenheit is converted to Celsius, which is the only scale
+HomeKit accepts — what you see in the Home app is your phone's own display
+setting, independent of the unit's. Such a unit is offered half-degree Celsius
+steps rather than whole ones, because a whole degree Fahrenheit is 0.56 °C and a
+1 °C step would put half of its setpoints out of reach.
+
 A service only appears once the unit has actually published a reading for it, and
 is never withdrawn afterwards — some units publish nothing until they are running.
 
