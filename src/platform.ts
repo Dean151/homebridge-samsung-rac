@@ -15,6 +15,8 @@ interface AccessoryContext {
   deviceId: string;
   model?: string;
   uuid?: string;
+  /** The user's heat override for this unit, if they set one. */
+  heating?: boolean;
 }
 
 export class SamsungRacPlatform implements DynamicPlatformPlugin {
@@ -174,12 +176,19 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     const seed = document.uuid ? `samsung-rac:${document.uuid}` : `samsung-rac:${host}:${deviceId}`;
     const uuid = this.api.hap.uuid.generate(seed);
 
-    const configured = this.settings.devices.find((device) => device.host === host)?.name;
+    const device = this.settings.devices.find((entry) => entry.host === host);
+    const configured = device?.name;
     const displayName = configured
       ? (multiple ? `${configured} ${deviceId}` : configured)
       : document.name ?? document.description ?? `Samsung AC ${host}`;
 
-    const context: AccessoryContext = { host, deviceId, model: document.description, uuid: document.uuid };
+    const context: AccessoryContext = {
+      host,
+      deviceId,
+      model: document.description,
+      uuid: document.uuid,
+      heating: device?.heating,
+    };
 
     const existing = this.cachedAccessories.find((accessory) => accessory.UUID === uuid);
     const accessory = existing ?? new this.api.platformAccessory(displayName, uuid);

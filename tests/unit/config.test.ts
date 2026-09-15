@@ -72,6 +72,41 @@ describe('normaliseConfig', () => {
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('duplicate'));
   });
 
+  describe('devices[].heating', () => {
+    const heating = (value: unknown) => normaliseConfig(
+      { platform: 'x', devices: [{ host: '10.0.0.1', heating: value }] },
+      logger() as never,
+    ).devices[0].heating;
+
+    it('leaves detection to the unit by default', () => {
+      expect(heating(undefined)).toBeUndefined();
+      expect(heating('auto')).toBeUndefined();
+      expect(heating('')).toBeUndefined();
+    });
+
+    it('forces heat on or off when asked', () => {
+      expect(heating('on')).toBe(true);
+      expect(heating('off')).toBe(false);
+    });
+
+    it('accepts the booleans a hand-written config.json is likely to use', () => {
+      expect(heating(true)).toBe(true);
+      expect(heating(false)).toBe(false);
+      expect(heating('true')).toBe(true);
+      expect(heating('false')).toBe(false);
+    });
+
+    it('falls back to detection on a value it cannot read, and says so', () => {
+      const log = logger();
+      const settings = normaliseConfig(
+        { platform: 'x', devices: [{ host: '10.0.0.1', heating: 'maybe' }] },
+        log as never,
+      );
+      expect(settings.devices[0].heating).toBeUndefined();
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('heating'));
+    });
+  });
+
   it('refuses a poll interval that would hammer the unit', () => {
     expect(normaliseConfig({ platform: 'x', updateInterval: 1 }, logger() as never).updateInterval).toBe(5);
   });

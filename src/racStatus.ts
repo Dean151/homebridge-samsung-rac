@@ -66,7 +66,23 @@ export interface RacStatusOptions {
 export interface RacStatus {
   active: boolean;
   mode: string;
+  /**
+   * What the unit ADVERTISES it can do — not what it can actually do. On the
+   * reference unit this omits 'Heat' even while the unit is actively heating,
+   * so it is a floor, never a ceiling. See `heatCapable`.
+   */
   supportedModes: string[];
+  /**
+   * Whether the unit has heating hardware, read from a nonzero `WarmCapa` in
+   * `Mode.options`, and undefined when it publishes no `WarmCapa` at all —
+   * "unknown", which is not the same as "no".
+   *
+   * This exists because `supportedModes` cannot be trusted: settled 2026-09-15
+   * against the reference unit, which reported `modes: ['Heat']` and
+   * `supportedModes: ['Cool','Dry','Wind','Auto']` in the same document, and
+   * accepted a write of 'Heat' confirmed by read-back. See notes/HANDOFF.md.
+   */
+  heatCapable?: boolean;
   currentTemperature: number;
   targetTemperature: number;
   minSetpoint?: number;
@@ -152,6 +168,25 @@ function outdoorTemperatureFrom(
     : undefined;
 }
 
+/**
+ * `CoolCapa`/`WarmCapa` in `Mode.options` carry the unit's rated capacity per
+ * direction; the reference unit reports `CoolCapa_50` and `WarmCapa_60`. A zero
+ * is read as "no hardware for this", and anything unparseable as "unknown"
+ * rather than "no" — a missing signal must not remove a control that works.
+ *
+ * Only ever one unit's worth of evidence: a cool-only model has never been
+ * observed, so this is the best available signal rather than a confirmed one,
+ * and `devices[].heating` overrides it in both directions.
+ */
+function capabilityFrom(options: Record<string, string>, key: string): boolean | undefined {
+  const raw = options[key]?.trim();
+  if (!raw) {
+    return undefined;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) ? value > 0 : undefined;
+}
+
 export function toRacStatus(device: RacDeviceDocument, settings: RacStatusOptions = {}): RacStatus {
   const temperature = device.Temperatures?.[0];
 
@@ -165,6 +200,7 @@ export function toRacStatus(device: RacDeviceDocument, settings: RacStatusOption
     // `modes` is the active mode list; the unit reports exactly one.
     mode: device.Mode?.modes?.[0] ?? '',
     supportedModes: device.Mode?.supportedModes ?? [],
+    heatCapable: capabilityFrom(modeOptions, 'WarmCapa'),
     currentTemperature: toCelsius(temperature?.current ?? NaN, unit),
     targetTemperature: toCelsiusSetpoint(temperature?.desired, unit) ?? NaN,
     temperatureId: temperature?.id ?? '0',

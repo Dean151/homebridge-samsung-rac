@@ -182,6 +182,56 @@ describe('SamsungRacAccessory', () => {
         .toEqual([0, 1, 2]);
     });
 
+    // The reference unit reports modes: ['Heat'] and a supportedModes that
+    // omits Heat, in the same document, and applies a write of 'Heat'. Trusting
+    // the advertised list alone hid working heating from HomeKit.
+    it('offers HEAT on a nonzero WarmCapa even when supportedModes omits Heat', async () => {
+      const { heaterCooler } = await build({
+        status: { heatCapable: true, options: { WarmCapa: '60', CoolCapa: '50' } },
+      });
+      expect(heaterCooler.findCharacteristic(Characteristic.TargetHeaterCoolerState)?.props.validValues)
+        .toEqual([0, 1, 2]);
+    });
+
+    it('does not offer HEAT on a zero WarmCapa', async () => {
+      const { heaterCooler } = await build({
+        status: { heatCapable: false, options: { WarmCapa: '0' } },
+      });
+      expect(heaterCooler.findCharacteristic(Characteristic.TargetHeaterCoolerState)?.props.validValues)
+        .toEqual([Characteristic.TargetHeaterCoolerState.AUTO, Characteristic.TargetHeaterCoolerState.COOL]);
+    });
+
+    it('offers HEAT when devices[].heating forces it on against every other signal', async () => {
+      const accessory = new FakeAccessory();
+      accessory.context = { heating: true };
+      const { heaterCooler } = await build({ accessory, status: { heatCapable: false } });
+      expect(heaterCooler.findCharacteristic(Characteristic.TargetHeaterCoolerState)?.props.validValues)
+        .toEqual([0, 1, 2]);
+    });
+
+    it('hides HEAT when devices[].heating forces it off against every other signal', async () => {
+      const accessory = new FakeAccessory();
+      accessory.context = { heating: false };
+      const { heaterCooler } = await build({
+        accessory,
+        status: { supportedModes: ['Cool', 'Heat', 'Auto'], heatCapable: true },
+      });
+      expect(heaterCooler.findCharacteristic(Characteristic.TargetHeaterCoolerState)?.props.validValues)
+        .toEqual([Characteristic.TargetHeaterCoolerState.AUTO, Characteristic.TargetHeaterCoolerState.COOL]);
+    });
+
+    it('adopts HEAT later when the unit only reports it once running', async () => {
+      const { heaterCooler, adapter, setStatus } = await build();
+      expect(heaterCooler.findCharacteristic(Characteristic.TargetHeaterCoolerState)?.props.validValues)
+        .not.toContain(Characteristic.TargetHeaterCoolerState.HEAT);
+
+      setStatus({ heatCapable: true, options: { WarmCapa: '60' } });
+      await pollOnce(adapter.getStatus);
+
+      expect(heaterCooler.findCharacteristic(Characteristic.TargetHeaterCoolerState)?.props.validValues)
+        .toEqual([0, 1, 2]);
+    });
+
     it('reports Dry as AUTO and IDLE, since HomeKit has no slot for it', async () => {
       const { heaterCooler } = await build({ status: { mode: 'Dry' } });
       expect(heaterCooler.findCharacteristic(Characteristic.TargetHeaterCoolerState)?.getHandler?.())

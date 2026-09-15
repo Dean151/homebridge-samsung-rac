@@ -11,6 +11,12 @@ export interface DeviceConfig {
   host: string;
   /** Optional: overrides the paired token in the token store. */
   token?: string;
+  /**
+   * Force heat support on or off, or undefined to work it out from the unit.
+   * Needed because `Mode.supportedModes` omits modes the unit really has — see
+   * RacStatus.heatCapable.
+   */
+  heating?: boolean;
 }
 
 export interface NormalisedConfig {
@@ -61,6 +67,34 @@ function toOutdoorUnit(value: unknown, log: Logging): 'C' | 'F' | null {
   return DEFAULT_OUTDOOR_TEMPERATURE_UNIT;
 }
 
+/**
+ * 'auto' (the default) detects heating from the unit, 'on' and 'off' force it.
+ * Booleans are accepted too, because a hand-written config.json is likelier to
+ * say `true` than `"on"`.
+ */
+function toHeating(value: unknown, host: string, log: Logging): boolean | undefined {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!raw || raw === 'auto') {
+    return undefined;
+  }
+  if (raw === 'on' || raw === 'true' || raw === 'yes') {
+    return true;
+  }
+  if (raw === 'off' || raw === 'false' || raw === 'no') {
+    return false;
+  }
+
+  log.warn(
+    `Ignoring an unrecognised heating setting '${value}' for ${host}; `
+    + 'detecting heat support from the unit instead.',
+  );
+  return undefined;
+}
+
 export function normaliseConfig(config: PlatformConfig, log: Logging): NormalisedConfig {
   const raw = Array.isArray(config.devices) ? (config.devices as unknown[]) : [];
   const devices: DeviceConfig[] = [];
@@ -84,6 +118,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       host,
       name: typeof candidate?.name === 'string' && candidate.name.trim() ? candidate.name.trim() : undefined,
       token: typeof candidate?.token === 'string' && candidate.token.trim() ? candidate.token.trim() : undefined,
+      heating: toHeating((candidate as { heating?: unknown } | null)?.heating, host, log),
     });
   }
 

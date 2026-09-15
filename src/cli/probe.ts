@@ -279,14 +279,26 @@ function buildMatrix(device: RacDeviceDocument): Attempt[] {
     }
   }
 
-  const otherMode = (device.Mode?.supportedModes ?? []).find((mode) => mode !== device.Mode?.modes?.[0]);
-  if (otherMode) {
+  const current = device.Mode?.modes?.[0];
+  const advertised = device.Mode?.supportedModes ?? [];
+  const otherMode = advertised.find((mode) => mode !== current);
+
+  // 'Heat' is tried even when the unit does not advertise it. The reference
+  // unit omits Heat from supportedModes while sitting in Heat and accepting a
+  // write of it, so the advertised list is a floor — the only way to find an
+  // unadvertised mode is to ask for it. See notes/HANDOFF.md.
+  const unadvertised = advertised.some((mode) => mode.toLowerCase() === 'heat') ? [] : ['Heat'];
+
+  for (const mode of [otherMode, ...unadvertised]) {
+    if (!mode || mode === current) {
+      continue;
+    }
     attempts.push({
-      label: `Mode.modes = [${otherMode}]`,
+      label: `Mode.modes = [${mode}]${unadvertised.includes(mode) ? ' (not advertised)' : ''}`,
       resource: `/devices/${id}/mode`,
       method: 'PUT',
-      body: { Mode: { modes: [otherMode] } },
-      requested: otherMode,
+      body: { Mode: { modes: [mode] } },
+      requested: mode,
       read: (d) => d.Mode?.modes?.[0],
     });
   }

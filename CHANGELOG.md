@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Heat was missing from the Home app on units that support it. The plugin built
+  its mode list from `Mode.supportedModes`, which the firmware under-reports:
+  the reference unit returns `modes: ["Heat"]` and
+  `supportedModes: ["Cool","Dry","Wind","Auto"]` in the *same* document while it
+  is actively heating, and applies a write of `Heat` confirmed by read-back.
+  Heat support is now taken from the unit's rated heating capacity
+  (`WarmCapa` in `Mode.options`) when the advertised list omits it, and
+  `devices[].heating` overrides both.
+
 - A unit configured in Fahrenheit had its temperatures passed to HomeKit as
   though they were Celsius, so a room at 71 °F read as 71 °C and every setpoint
   written to it was wrong by the same margin. Temperatures are now converted at
@@ -17,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   setpoints out of reach. Celsius units are unaffected.
 
 ### Added
+
+- `devices[].heating`, to force heat support on or off for a unit whose own
+  signals are wrong. It defaults to `auto`, which is right for every unit seen
+  so far and needs no configuration.
 
 - The unit's outdoor temperature sensor, as a tile of its own, from the
   `OutdoorTemp` entry in `Mode.options`. Which scale that is in is stated nowhere

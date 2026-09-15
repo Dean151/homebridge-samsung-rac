@@ -32,7 +32,7 @@ A single `HeaterCooler` accessory per unit:
 | On / off | `Operation.power` |
 | Current temperature | `Temperatures[0].current` |
 | Target temperature | `Temperatures[0].desired`, with the range the unit reports |
-| Mode | `Mode.modes`, limited to the modes the unit says it supports |
+| Mode | `Mode.modes`, plus `WarmCapa` to tell whether the unit can heat |
 | Fan speed | `Wind.speedLevel` / `Wind.maxSpeedLevel` |
 | Swing | `Wind.direction` |
 | Filter indicator | the `FilterAlarm` entry in `Alarms` |
@@ -41,6 +41,13 @@ A single `HeaterCooler` accessory per unit:
 Dry and fan-only modes have no HomeKit equivalent. The plugin reports them as
 Auto/Idle and leaves them alone rather than overwriting a mode you chose in the
 Samsung app.
+
+**Heat is offered even though the unit denies supporting it.** The reference
+unit lists `Cool`, `Dry`, `Wind` and `Auto` as its supported modes and leaves
+`Heat` out — while sitting in `Heat`, reporting it, and accepting a write of it.
+The advertised list is therefore a floor, not a ceiling, so the plugin reads
+heat support from the unit's rated heating capacity (`WarmCapa`) instead. If
+that guesses wrong for your unit in either direction, `heating` settles it.
 
 A unit set to Fahrenheit is converted to Celsius, which is the only scale
 HomeKit accepts — what you see in the Home app is your phone's own display
@@ -189,7 +196,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 {
   "platform": "SamsungRacLocal",
   "devices": [
-    { "name": "Lounge", "host": "10.0.0.9" }
+    { "name": "Lounge", "host": "10.0.0.9", "heating": "auto" }
   ],
   "updateInterval": 10,
   "swingDirection": "Up_And_Low",
@@ -202,6 +209,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `devices[].host` | — | The unit's IP address. Required. |
 | `devices[].name` | the unit's own name | Shown in the Home app. |
 | `devices[].token` | — | Only if you paired outside this plugin. |
+| `devices[].heating` | `auto` | `on` or `off` to override whether Heat is offered. `auto` reads it from the unit, which is right for every unit seen so far. |
 | `updateInterval` | `10` | Seconds between polls; minimum 5. |
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
 | `outdoorTemperature` | `fahrenheit` | The scale the unit's outdoor sensor reports in, or `off` to hide it. Not the same setting as the unit's own scale. |

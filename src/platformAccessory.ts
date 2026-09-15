@@ -50,6 +50,12 @@ export class SamsungRacAccessory {
   private maxSpeedLevel = 0;
   private loggedHeatingCap = false;
 
+  /** `devices[].heating` for this unit: true, false, or undefined for auto. */
+  private readonly heatingOverride?: boolean;
+
+  /** Whether HEAT is currently on offer, so adoption stays one-way. */
+  private offersHeat = false;
+
   static async create(
     platform: SamsungRacPlatform,
     accessory: PlatformAccessory,
@@ -67,7 +73,8 @@ export class SamsungRacAccessory {
   ) {
     this.status = emptyStatus();
 
-    const context = this.accessory.context as { model?: string; uuid?: string };
+    const context = this.accessory.context as { model?: string; uuid?: string; heating?: boolean };
+    this.heatingOverride = context.heating;
 
     this.accessory.getService(this.platform.Service.AccessoryInformation)
       ?.setCharacteristic(this.platform.Characteristic.Manufacturer, 'Samsung')
@@ -179,13 +186,66 @@ export class SamsungRacAccessory {
   }
 
   /**
-   * Only advertise the target states the unit actually supports. The reference
-   * unit has no heat mode at all, and offering HEAT would give the user a
-   * control that does nothing.
+   * Whether to offer HEAT, which `supportedModes` alone cannot answer.
+   *
+   * The reference unit reports `modes: ['Heat']` and `supportedModes:
+   * ['Cool','Dry','Wind','Auto']` in the SAME document, and applies a write of
+   * 'Heat' confirmed by read-back — so the advertised list omits a mode the
+   * hardware genuinely has, and trusting it hides working heating from HomeKit.
+   * Settled 2026-09-15; see notes/HANDOFF.md.
+   *
+   * Order: the user's override wins outright, in both directions — it is the
+   * escape hatch for a unit whose signals are wrong either way. Failing that,
+   * the advertised list and `WarmCapa` can only ADD heat, never take it away,
+   * because each is a floor rather than a ceiling: the failure being fixed is a
+   * mode wrongly absent, not a mode wrongly present.
+   */
+  private supportsHeat(): boolean {
+    if (this.heatingOverride !== undefined) {
+      return this.heatingOverride;
+    }
+    if (this.status.supportedModes.some((mode) => mode.toLowerCase() === 'heat')) {
+      return true;
+    }
+    return this.status.heatCapable === true;
+  }
+
+  /** Why heat is or is not on offer, so a wrong guess is diagnosable from the log. */
+  private heatSource(): string {
+    if (this.heatingOverride !== undefined) {
+      return `the 'heating' setting for this unit (${this.heatingOverride ? 'on' : 'off'})`;
+    }
+    if (this.status.supportedModes.some((mode) => mode.toLowerCase() === 'heat')) {
+      return 'the unit advertising it in supportedModes';
+    }
+    if (this.status.heatCapable === true) {
+      return `WarmCapa_${this.status.options.WarmCapa} (supportedModes does not list Heat)`;
+    }
+    return this.status.heatCapable === false
+      ? `WarmCapa_${this.status.options.WarmCapa}`
+      : 'neither supportedModes nor WarmCapa';
+  }
+
+  /**
+   * Only advertise the target states the unit actually supports: offering a
+   * control that does nothing is worse than omitting it. `supportedModes` is
+   * the starting point rather than the whole answer — see supportsHeat().
    */
   private configureTargetStates(): void {
-    const supported = this.status.supportedModes.map((mode) => mode.toLowerCase());
+    // supportsHeat() is the sole authority on heat, so an override of 'off'
+    // removes it even from a unit that does advertise it.
+    const supported = new Set(this.status.supportedModes.map((mode) => mode.toLowerCase()));
+    supported.delete('heat');
+    if (this.supportsHeat()) {
+      supported.add('heat');
+    }
     const values = new Set<number>();
+    this.offersHeat = supported.has('heat');
+
+    this.platform.log.info(
+      `${this.accessory.displayName}: heat ${this.offersHeat ? 'available' : 'not available'}, `
+      + `from ${this.heatSource()}.`,
+    );
 
     for (const mode of supported) {
       if (mode === 'cool') {
@@ -331,6 +391,13 @@ export class SamsungRacAccessory {
     if (this.speedStep === 0 && this.hasFanReading()) {
       this.platform.log.info(`${this.accessory.displayName}: fan speed is now reported by the unit.`);
       this.configureFanSpeed();
+    }
+
+    // A unit that starts advertising Heat, or that only publishes WarmCapa once
+    // it has run, must gain the control rather than wait for a restart.
+    if (!this.offersHeat && this.supportsHeat()) {
+      this.platform.log.info(`${this.accessory.displayName}: heat is now reported by the unit.`);
+      this.configureTargetStates();
     }
 
     if (!this.findCharacteristic(this.platform.Characteristic.SwingMode) && this.hasSwingReading()) {

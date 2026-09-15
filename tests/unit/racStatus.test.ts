@@ -132,6 +132,37 @@ describe('toRacStatus', () => {
     });
   });
 
+  describe('heatCapable', () => {
+    const withOptions = (...options: string[]) => ({ Mode: { options } });
+
+    // supportedModes cannot answer this: the reference unit reported
+    // modes: ['Heat'] alongside a supportedModes without Heat, and applied a
+    // write of 'Heat'. WarmCapa is the only signal that tracks the hardware.
+    it('reads a nonzero WarmCapa as heating hardware', () => {
+      expect(toRacStatus(withOptions('CoolCapa_50', 'WarmCapa_60')).heatCapable).toBe(true);
+    });
+
+    it('reads a zero WarmCapa as no heating hardware', () => {
+      expect(toRacStatus(withOptions('CoolCapa_50', 'WarmCapa_0')).heatCapable).toBe(false);
+    });
+
+    it('stays undefined when the unit publishes no WarmCapa, which is not a no', () => {
+      expect(toRacStatus(withOptions('CoolCapa_50')).heatCapable).toBeUndefined();
+      expect(toRacStatus({}).heatCapable).toBeUndefined();
+    });
+
+    it('stays undefined when WarmCapa is not a number', () => {
+      expect(toRacStatus(withOptions('WarmCapa_NotAllowed')).heatCapable).toBeUndefined();
+    });
+
+    it('does not read Heat out of supportedModes, which is a separate question', () => {
+      const status = toRacStatus({ Mode: { modes: ['Heat'], supportedModes: ['Cool', 'Dry', 'Wind', 'Auto'] } });
+      expect(status.mode).toBe('Heat');
+      expect(status.supportedModes).not.toContain('Heat');
+      expect(status.heatCapable).toBeUndefined();
+    });
+  });
+
   it('reports no filter alarm when the unit lists none', () => {
     expect(toRacStatus({ Alarms: [] }).filterAlarm).toBe(false);
     expect(toRacStatus({}).filterAlarm).toBe(false);

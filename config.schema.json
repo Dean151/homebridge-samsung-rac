@@ -29,6 +29,17 @@
               "title": "Device token (optional)",
               "type": "string",
               "description": "Only needed if you paired outside this plugin. Leave empty and use Pair above; tokens paired there are stored outside config.json."
+            },
+            "heating": {
+              "title": "Heating",
+              "type": "string",
+              "default": "auto",
+              "oneOf": [
+                { "title": "Detect automatically", "enum": ["auto"] },
+                { "title": "This unit can heat", "enum": ["on"] },
+                { "title": "This unit cannot heat", "enum": ["off"] }
+              ],
+              "description": "Samsung units under-report what they support: the reference unit leaves Heat out of its mode list even while it is heating. Detection reads the unit's rated heating capacity instead, which is right for every unit seen so far. Set this only if the Home app offers a Heat button that does nothing, or hides one that should work."
             }
           }
         }
