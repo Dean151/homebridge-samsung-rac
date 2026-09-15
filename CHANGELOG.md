@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Every switch, and the filter and outdoor sensor with them, showed up in the
+  Home app under the air conditioner's own name — two convenience-mode switches
+  on one unit both read "Climatiseur" and nothing said which was which. The
+  plugin was setting each service's `Name`, which the Home app does not use for
+  this; it reads `ConfiguredName`, which is now set for every service the
+  accessory carries.
+
+  `ConfiguredName` is writable, so renaming a tile in the Home app reaches the
+  plugin as a write. That name is kept in the accessory's context and used from
+  then on, instead of being overwritten by the plugin's own on the next restart.
+
 ## [0.3.0] - 2026-09-15
 
 ### Added

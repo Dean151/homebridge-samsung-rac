@@ -84,7 +84,10 @@ async function build(options: {
     Service,
     Characteristic,
     log,
-    api: { hap: { HapStatusError: FakeHapStatusError, HAPStatus } },
+    api: {
+      hap: { HapStatusError: FakeHapStatusError, HAPStatus },
+      updatePlatformAccessories: jest.fn(),
+    },
     // A long interval keeps the poll timer from firing on its own mid-test.
     settings: {
       updateInterval: 3600,
@@ -367,6 +370,14 @@ describe('SamsungRacAccessory', () => {
       expect(heaterCooler.linkedServices).toContain(filter);
     });
 
+    it('names the filter service after the unit, not the accessory', async () => {
+      const { accessory } = await build();
+
+      expect(accessory.getService(Service.FilterMaintenance)
+        ?.findCharacteristic(Characteristic.ConfiguredName)?.value)
+        .toBe('Test AC Filter');
+    });
+
     it('reports a filter alarm', async () => {
       const { accessory } = await build({ status: { filterAlarm: true } });
       expect(accessory.getService(Service.FilterMaintenance)
@@ -636,6 +647,31 @@ describe('SamsungRacAccessory', () => {
       expect(heaterCooler.linkedServices).toEqual(expect.arrayContaining(switches(accessory)));
     });
 
+    it('gives each switch a name of its own, which is what the Home app reads', async () => {
+      const { accessory } = await build({ status: { comode: 'Off' }, settings: convenience });
+
+      // Name alone leaves both tiles reading the accessory's name.
+      expect(switches(accessory)
+        .map((service) => service.findCharacteristic(Characteristic.ConfiguredName)?.value))
+        .toEqual(['Test AC Quiet', 'Test AC Comfort']);
+    });
+
+    it('keeps a rename made in the Home app, rather than undoing it on restart', async () => {
+      const shared = new FakeAccessory();
+      const first = await build({ accessory: shared, status: { comode: 'Off' }, settings: convenience });
+
+      const quiet = shared.getServiceById(Service.Switch, 'comode-quiet');
+      await quiet?.findCharacteristic(Characteristic.ConfiguredName)?.setHandler?.('WindFree');
+      expect(first.log.info.mock.calls.flat().join(' ')).toContain('renamed to');
+
+      // What the next Homebridge start does with the cached accessory.
+      await build({ accessory: shared, status: { comode: 'Off' }, settings: convenience });
+
+      expect(shared.getServiceById(Service.Switch, 'comode-quiet')
+        ?.findCharacteristic(Characteristic.ConfiguredName)?.value)
+        .toBe('WindFree');
+    });
+
     it('reads on only for the mode the unit is actually in', async () => {
       const { accessory } = await build({ status: { comode: 'Quiet' }, settings: convenience });
 
@@ -762,7 +798,7 @@ describe('SamsungRacAccessory', () => {
       await SamsungRacAccessory.create(
         {
           Service, Characteristic, log,
-          api: { hap: { HapStatusError: FakeHapStatusError, HAPStatus } },
+          api: { hap: { HapStatusError: FakeHapStatusError, HAPStatus }, updatePlatformAccessories: jest.fn() },
           settings: { updateInterval: 3600, swingDirection: 'Up_And_Low', convenienceModes: [], modeSwitches: [] },
         } as never,
         accessory as never,
@@ -791,7 +827,7 @@ describe('SamsungRacAccessory', () => {
       await SamsungRacAccessory.create(
         {
           Service, Characteristic, log,
-          api: { hap: { HapStatusError: FakeHapStatusError, HAPStatus } },
+          api: { hap: { HapStatusError: FakeHapStatusError, HAPStatus }, updatePlatformAccessories: jest.fn() },
           settings: { updateInterval: 3600, swingDirection: 'Up_And_Low', convenienceModes: [], modeSwitches: [] },
         } as never,
         new FakeAccessory() as never,

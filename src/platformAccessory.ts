@@ -388,7 +388,7 @@ export class SamsungRacAccessory {
     }
 
     const service = existing ?? this.accessory.addService(this.platform.Service.FilterMaintenance);
-    service.setCharacteristic(this.platform.Characteristic.Name, `${this.accessory.displayName} Filter`);
+    this.nameService(this.accessory, service, 'filter', `${this.accessory.displayName} Filter`);
     service.getCharacteristic(this.platform.Characteristic.FilterChangeIndication)
       .onGet(this.getFilterChange.bind(this));
     this.service.addLinkedService(service);
@@ -464,7 +464,7 @@ export class SamsungRacAccessory {
     }
 
     const service = existing ?? host.addService(this.platform.Service.TemperatureSensor);
-    service.setCharacteristic(this.platform.Characteristic.Name, `${this.accessory.displayName} Outdoor`);
+    this.nameService(host, service, 'outdoor', `${this.accessory.displayName} Outdoor`);
     service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
       .onGet(this.getOutdoorTemperature.bind(this));
 
@@ -584,7 +584,7 @@ export class SamsungRacAccessory {
       const name = `${this.accessory.displayName} ${spec.label}`;
       const service = this.modeSwitchService(spec)
         ?? this.accessory.addService(this.platform.Service.Switch, name, spec.subtype);
-      service.setCharacteristic(this.platform.Characteristic.Name, name);
+      this.nameService(this.accessory, service, spec.subtype, name);
       service.getCharacteristic(this.platform.Characteristic.On)
         .onGet(() => this.getModeSwitch(spec))
         .onSet((value) => this.setModeSwitch(spec, value));
@@ -1083,6 +1083,38 @@ export class SamsungRacAccessory {
     }
   }
 
+  /**
+   * Give a service a name of its own in the Home app.
+   *
+   * `Name` alone does not do it: the Home app shows the ACCESSORY's name for
+   * every service hanging off it, which is how two switches on one air
+   * conditioner both end up reading "Climatiseur". `ConfiguredName` is the one
+   * it reads.
+   *
+   * It is also writable, so renaming the tile in the Home app comes back here
+   * as a write. That name is kept in the accessory's context and used in place
+   * of ours from then on — otherwise the next restart would quietly undo the
+   * user's rename.
+   */
+  private nameService(host: PlatformAccessory, service: Service, key: string, fallback: string): void {
+    const names = serviceNamesOf(host);
+    const name = names[key] ?? fallback;
+
+    service.setCharacteristic(this.platform.Characteristic.Name, name);
+    service.addOptionalCharacteristic(this.platform.Characteristic.ConfiguredName);
+    service.getCharacteristic(this.platform.Characteristic.ConfiguredName)
+      .updateValue(name)
+      .onSet((value) => {
+        const chosen = String(value).trim();
+        if (!chosen || chosen === names[key]) {
+          return;
+        }
+        names[key] = chosen;
+        this.platform.api.updatePlatformAccessories([host]);
+        this.platform.log.info(`${this.accessory.displayName}: '${fallback}' renamed to '${chosen}'.`);
+      });
+  }
+
   // --- helpers -------------------------------------------------------------
 
   /** Look a characteristic up WITHOUT the add-on-first-access that HAP does. */
@@ -1106,6 +1138,17 @@ export class SamsungRacAccessory {
       service.removeCharacteristic(existing);
     }
   }
+}
+
+/**
+ * Names the user gave this accessory's services in the Home app, kept in the
+ * accessory context so they survive a restart. Homebridge persists the context
+ * with the cached accessory.
+ */
+function serviceNamesOf(accessory: PlatformAccessory): Record<string, string> {
+  const context = accessory.context as { serviceNames?: Record<string, string> };
+  context.serviceNames ??= {};
+  return context.serviceNames;
 }
 
 function clamp(value: number, min: number, max: number, fallback: number): number {

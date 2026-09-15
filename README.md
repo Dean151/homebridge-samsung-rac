@@ -65,7 +65,9 @@ for a name your model does not know would simply refuse to stay on. A
 TP6X_RAC_16K applies `Comfort`, `Quiet`, `Speed`, `Smart`, `2Step` and `Sleep`,
 confirmed by read-back; `WindFree` and `SoftCool` are not names it knows, so one
 of those six is what it calls WindFree. Which one is stated nowhere — try them,
-and rename the switch in the Home app to whatever it turns out to be.
+and rename the switch in the Home app to whatever it turns out to be. A rename
+made there is kept: it comes back to the plugin and is stored with the
+accessory, rather than being undone at the next restart.
 
 **Heat is offered even though the unit denies supporting it.** The reference
 unit lists `Cool`, `Dry`, `Wind` and `Auto` as its supported modes and leaves

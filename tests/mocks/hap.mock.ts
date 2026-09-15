@@ -35,6 +35,8 @@ export const Characteristic = {
   SwingMode: characteristic('SwingMode', { SWING_DISABLED: 0, SWING_ENABLED: 1 }),
   FilterChangeIndication: characteristic('FilterChangeIndication', { FILTER_OK: 0, CHANGE_FILTER: 1 }),
   FilterLifeLevel: characteristic('FilterLifeLevel'),
+  /** What the Home app actually shows for a service; `Name` it ignores. */
+  ConfiguredName: characteristic('ConfiguredName'),
   On: characteristic('On'),
 };
 
@@ -78,6 +80,7 @@ export class FakeCharacteristic {
 export class FakeService {
   public characteristics: FakeCharacteristic[] = [];
   public linkedServices: FakeService[] = [];
+  public optional: string[] = [];
   public primary = false;
 
   /**
@@ -122,6 +125,11 @@ export class FakeService {
     if (index >= 0) {
       this.characteristics.splice(index, 1);
     }
+  }
+
+  /** Real HAP only warns; the mock just records that it was declared. */
+  addOptionalCharacteristic(type: CharacteristicClass): void {
+    this.optional.push(type.UUID);
   }
 
   setPrimaryService(isPrimary = true): this {
