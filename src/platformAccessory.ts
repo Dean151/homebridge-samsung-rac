@@ -48,6 +48,8 @@ function labelFor(name: string): string {
 interface ModeSwitch {
   /** Stable, and the HomeKit subtype: it is what carries the user's automations. */
   subtype: string;
+  /** Which field this switch is backed by, and so which switches it excludes. */
+  group: 'comode' | 'mode';
   label: string;
   /** Whether the unit publishes the field this switch is backed by at all. */
   available: (status: RacStatus) => boolean;
@@ -500,6 +502,7 @@ export class SamsungRacAccessory {
     for (const name of this.platform.settings.convenienceModes) {
       specs.push({
         subtype: `${switchSubtypes.comode}${name.toLowerCase()}`,
+        group: 'comode',
         label: labelFor(name),
         available: (status) => typeof status.comode === 'string' && status.comode.length > 0,
         isOn: (status) => status.comode?.toLowerCase() === name.toLowerCase(),
@@ -512,6 +515,7 @@ export class SamsungRacAccessory {
     for (const name of this.platform.settings.modeSwitches) {
       specs.push({
         subtype: `${switchSubtypes.mode}${name.toLowerCase()}`,
+        group: 'mode',
         label: labelFor(name),
         available: (status) => status.mode.length > 0,
         isOn: (status) => status.mode.toLowerCase() === name.toLowerCase(),
@@ -936,6 +940,24 @@ export class SamsungRacAccessory {
       `${this.accessory.displayName}: HomeKit asked for ${spec.label} ${on ? 'on' : 'off'}.`,
     );
 
+    if (on) {
+      // The unit holds one of these at a time, so the others are already on
+      // their way off — say so now rather than leaving two tiles reading on for
+      // the second and a half it takes to write and read back. If the unit then
+      // refuses the change, the read-back puts them back where they were.
+      this.excludeSiblings(spec);
+    } else if (!spec.isOn(this.status)) {
+      // Switching off something that is not on must not touch the unit. A
+      // scene that turns every switch in the group off would otherwise send one
+      // write per switch, and each of them would cancel the mode a later switch
+      // in the same scene had just set.
+      this.platform.log.debug(
+        `${this.accessory.displayName}: ${spec.label} is already off; sending nothing.`,
+      );
+      this.push();
+      return;
+    }
+
     const write = spec.write(on);
     if (!write) {
       // Nothing to send: the unit is always in some mode, and we have nothing
@@ -950,6 +972,17 @@ export class SamsungRacAccessory {
     }
 
     await this.apply(write);
+  }
+
+  /** Every other switch backed by the same field reads off, immediately. */
+  private excludeSiblings(spec: ModeSwitch): void {
+    for (const other of this.modeSwitches) {
+      if (other.subtype === spec.subtype || other.group !== spec.group) {
+        continue;
+      }
+      this.modeSwitchService(other)
+        ?.updateCharacteristic(this.platform.Characteristic.On, false);
+    }
   }
 
   /**

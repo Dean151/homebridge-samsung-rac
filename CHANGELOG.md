@@ -5,6 +5,22 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Switching one convenience mode on left the previous one reading on for the
+  second and a half it took to write the change and read it back. The switches
+  have always been one group backed by one field, so two could never both be
+  on for real — but the Home app showed it that way until the unit answered.
+  The rest of the group now goes off as the write leaves, and the read-back
+  still has the last word if the unit refuses the change.
+
+- Switching off a mode switch that was already off sent `Comode_Off` to the
+  unit anyway. A scene that turns a whole group off sends one write per switch,
+  so a scene could cancel the very mode a later switch in it had just set.
+  Switching off something that is not on now sends nothing.
+
 ## [0.3.1] - 2026-09-15
 
 ### Fixed

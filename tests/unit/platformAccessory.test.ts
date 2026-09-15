@@ -680,11 +680,19 @@ describe('SamsungRacAccessory', () => {
     });
 
     it('writes the mode when switched on, and Off when switched off', async () => {
-      const { accessory, adapter } = await build({ status: { comode: 'Off' }, settings: convenience });
+      const { accessory, adapter, setStatus } = await build({
+        status: { comode: 'Off' },
+        settings: convenience,
+      });
       const quiet = on(accessory.getServiceById(Service.Switch, 'comode-quiet'));
 
       await quiet?.setHandler?.(true);
       expect(adapter.setComode).toHaveBeenCalledWith('Quiet');
+
+      // The unit took it, so this is now the switch that is on — which is what
+      // makes switching it off mean something.
+      setStatus({ comode: 'Quiet' });
+      await pollOnce(adapter.getStatus);
 
       await quiet?.setHandler?.(false);
       expect(adapter.setComode).toHaveBeenLastCalledWith('Off');
@@ -701,6 +709,61 @@ describe('SamsungRacAccessory', () => {
 
       expect(on(accessory.getServiceById(Service.Switch, 'comode-quiet'))?.value).toBe(true);
       expect(on(accessory.getServiceById(Service.Switch, 'comode-comfort'))?.value).toBe(false);
+    });
+
+    it('turns the others off at once, not when the unit gets round to answering', async () => {
+      const { accessory, adapter, setStatus } = await build({
+        status: { comode: 'Comfort' },
+        settings: convenience,
+      });
+      const comfort = on(accessory.getServiceById(Service.Switch, 'comode-comfort'));
+      expect(comfort?.getHandler?.()).toBe(true);
+
+      // The unit takes a second and a half to answer, and is read back after
+      // that; two tiles must not both read on in the meantime.
+      let release = () => undefined as void;
+      const answered = new Promise<void>((resolve) => {
+        release = () => resolve();
+      });
+      adapter.setComode.mockImplementation(async () => {
+        await answered;
+        setStatus({ comode: 'Quiet' });
+        return { applied: true, requested: 'Quiet', actual: 'Quiet', status: await adapter.getStatus() };
+      });
+
+      const write = on(accessory.getServiceById(Service.Switch, 'comode-quiet'))?.setHandler?.(true);
+      expect(comfort?.value).toBe(false);
+
+      release();
+      await write;
+
+      expect(on(accessory.getServiceById(Service.Switch, 'comode-quiet'))?.value).toBe(true);
+      expect(comfort?.value).toBe(false);
+    });
+
+    it('sends nothing when a switch that is already off is switched off', async () => {
+      const { accessory, adapter } = await build({ status: { comode: 'Quiet' }, settings: convenience });
+
+      // What a scene that turns the whole group off does: one write per switch,
+      // and the ones that were already off must not cancel anything.
+      await on(accessory.getServiceById(Service.Switch, 'comode-comfort'))?.setHandler?.(false);
+
+      expect(adapter.setComode).not.toHaveBeenCalled();
+      expect(on(accessory.getServiceById(Service.Switch, 'comode-quiet'))?.getHandler?.()).toBe(true);
+    });
+
+    it('leaves a switch in the other group alone', async () => {
+      const { accessory } = await build({
+        status: { comode: 'Off', mode: 'Dry' },
+        settings: { convenienceModes: ['Quiet'], modeSwitches: ['Dry'] },
+      });
+      const dry = on(accessory.getServiceById(Service.Switch, 'mode-dry'));
+
+      await on(accessory.getServiceById(Service.Switch, 'comode-quiet'))?.setHandler?.(true);
+
+      // The convenience mode and the mode are different fields: one says
+      // nothing about the other.
+      expect(dry?.getHandler?.()).toBe(true);
     });
 
     it('publishes nothing for a unit that reports no convenience mode at all', async () => {
