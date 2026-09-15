@@ -393,7 +393,28 @@ export class SamsungRacAccessory {
       .onGet(this.getFilterChange.bind(this));
     this.service.addLinkedService(service);
 
+    if (this.hasFilterLifeReading()) {
+      service.getCharacteristic(this.platform.Characteristic.FilterLifeLevel)
+        .onGet(this.getFilterLife.bind(this));
+      this.platform.log.info(
+        `${this.accessory.displayName}: filter status available, `
+        + `${this.status.filterLife}% left of ${this.status.filterAlarmHours}h `
+        + `(${this.status.filterHours}h used).`,
+      );
+      return;
+    }
+
+    this.removeCharacteristicIfPresent(this.platform.Characteristic.FilterLifeLevel, service);
     this.platform.log.info(`${this.accessory.displayName}: filter status available.`);
+  }
+
+  /**
+   * Both counters, not just one: the threshold is the user's to set in the
+   * Samsung app — 180, 300, 500 or 700 hours — so a percentage cannot be
+   * computed from the hours used alone.
+   */
+  private hasFilterLifeReading(): boolean {
+    return Number.isFinite(this.status.filterLife);
   }
 
   private hasOutdoorReading(): boolean {
@@ -613,8 +634,16 @@ export class SamsungRacAccessory {
       this.configureSwing();
     }
 
-    if (!this.accessory.getService(this.platform.Service.FilterMaintenance) && this.hasFilterReading()) {
+    const filter = this.accessory.getService(this.platform.Service.FilterMaintenance);
+    if (!filter && this.hasFilterReading()) {
       this.platform.log.info(`${this.accessory.displayName}: filter status is now reported by the unit.`);
+      this.configureFilter();
+    } else if (
+      filter
+      && this.hasFilterLifeReading()
+      && !this.findCharacteristic(this.platform.Characteristic.FilterLifeLevel, filter)
+    ) {
+      this.platform.log.info(`${this.accessory.displayName}: the filter's hours are now reported by the unit.`);
       this.configureFilter();
     }
 
@@ -788,6 +817,16 @@ export class SamsungRacAccessory {
       );
     }
     return Math.max(-270, Math.min(100, value as number));
+  }
+
+  private getFilterLife(): CharacteristicValue {
+    this.assertResponsive();
+    return this.filterLife();
+  }
+
+  /** 100 rather than 0 when unknown: an invented "replace me now" is worse. */
+  private filterLife(): number {
+    return Number.isFinite(this.status.filterLife) ? this.status.filterLife as number : 100;
   }
 
   private getModeSwitch(spec: ModeSwitch): CharacteristicValue {
@@ -1004,6 +1043,9 @@ export class SamsungRacAccessory {
 
       const filter = this.accessory.getService(this.platform.Service.FilterMaintenance);
       filter?.updateCharacteristic(this.platform.Characteristic.FilterChangeIndication, this.filterChange());
+      if (filter && this.hasFilterLifeReading()) {
+        filter.updateCharacteristic(this.platform.Characteristic.FilterLifeLevel, this.filterLife());
+      }
 
       const outdoor = this.outdoorService();
       if (outdoor && this.hasOutdoorReading()) {
@@ -1044,18 +1086,24 @@ export class SamsungRacAccessory {
   // --- helpers -------------------------------------------------------------
 
   /** Look a characteristic up WITHOUT the add-on-first-access that HAP does. */
-  private findCharacteristic(type: WithUUID<new () => Characteristic>): Characteristic | undefined {
-    return this.service.characteristics.find((candidate) => candidate.UUID === type.UUID);
+  private findCharacteristic(
+    type: WithUUID<new () => Characteristic>,
+    service: Service = this.service,
+  ): Characteristic | undefined {
+    return service.characteristics.find((candidate) => candidate.UUID === type.UUID);
   }
 
   /**
    * Drop an optional characteristic a cached accessory may still carry from an
    * earlier plugin version; `getCharacteristic` would add it straight back.
    */
-  private removeCharacteristicIfPresent(type: WithUUID<new () => Characteristic>): void {
-    const existing = this.findCharacteristic(type);
+  private removeCharacteristicIfPresent(
+    type: WithUUID<new () => Characteristic>,
+    service: Service = this.service,
+  ): void {
+    const existing = this.findCharacteristic(type, service);
     if (existing) {
-      this.service.removeCharacteristic(existing);
+      service.removeCharacteristic(existing);
     }
   }
 }

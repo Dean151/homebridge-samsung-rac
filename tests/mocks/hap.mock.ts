@@ -34,6 +34,7 @@ export const Characteristic = {
   RotationSpeed: characteristic('RotationSpeed'),
   SwingMode: characteristic('SwingMode', { SWING_DISABLED: 0, SWING_ENABLED: 1 }),
   FilterChangeIndication: characteristic('FilterChangeIndication', { FILTER_OK: 0, CHANGE_FILTER: 1 }),
+  FilterLifeLevel: characteristic('FilterLifeLevel'),
   On: characteristic('On'),
 };
 

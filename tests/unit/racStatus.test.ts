@@ -27,6 +27,38 @@ describe('parseOptions', () => {
 describe('toRacStatus', () => {
   const status = toRacStatus(devicesFrom(fixture)[0]);
 
+  describe('the filter counters', () => {
+    const life = (options: string[]) => toRacStatus({ Mode: { options } });
+
+    it('reads FilterTime as tenths of an hour, which is what the Samsung app shows', () => {
+      // 7145 is displayed by the app as 714 h 30 min — measured 2026-09-15.
+      const status = life(['FilterTime_7145', 'FilterAlarmTime_500']);
+      expect(status.filterHours).toBe(714.5);
+      expect(status.filterAlarmHours).toBe(500);
+    });
+
+    it('reads the threshold from the unit, since the app lets you change it', () => {
+      expect(life(['FilterTime_900', 'FilterAlarmTime_180']).filterLife).toBe(50);
+      expect(life(['FilterTime_900', 'FilterAlarmTime_300']).filterLife).toBe(70);
+    });
+
+    it('reports a filter past its reminder as spent, not as a negative', () => {
+      // The reference unit, before it was reset: 714.5 hours against 500.
+      expect(life(['FilterTime_7145', 'FilterAlarmTime_500']).filterLife).toBe(0);
+    });
+
+    it('reports a freshly reset filter as whole', () => {
+      expect(life(['FilterTime_0', 'FilterAlarmTime_500']).filterLife).toBe(100);
+    });
+
+    it('says nothing when either counter is missing or unusable', () => {
+      expect(life(['FilterTime_7145']).filterLife).toBeUndefined();
+      expect(life(['FilterAlarmTime_500']).filterLife).toBeUndefined();
+      expect(life(['FilterTime_7145', 'FilterAlarmTime_0']).filterLife).toBeUndefined();
+      expect(life(['FilterTime_soon', 'FilterAlarmTime_500']).filterLife).toBeUndefined();
+    });
+  });
+
   it('reads the convenience mode the unit is in, and nothing about the ones it would take', () => {
     expect(status.comode).toBe('Off');
     expect(toRacStatus({ Mode: { options: ['Comode_Quiet'] } }).comode).toBe('Quiet');

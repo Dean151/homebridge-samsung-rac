@@ -99,6 +99,15 @@ export interface RacStatus {
   speedLevel?: number;
   maxSpeedLevel?: number;
   filterAlarm: boolean;
+  /** Hours of running time on the current filter, from `FilterTime`. */
+  filterHours?: number;
+  /** The cleaning reminder's threshold in hours, from `FilterAlarmTime`. */
+  filterAlarmHours?: number;
+  /**
+   * How much of the filter's life is left, as the percentage HomeKit's
+   * FilterLifeLevel wants. Absent when the unit publishes neither counter.
+   */
+  filterLife?: number;
   /**
    * The unit's convenience mode — `Comode` in `Mode.options` — which is the
    * family WindFree belongs to. One value at a time, `Off` when none is
@@ -181,6 +190,44 @@ function outdoorTemperatureFrom(
 }
 
 /**
+ * The filter's hours and its cleaning threshold.
+ *
+ * `FilterTime` counts **tenths of an hour** of running time — `7145` is the
+ * 714 h 30 min the Samsung app displays — while `FilterAlarmTime` is a plain
+ * count of hours. Two different units in two adjacent keys, and neither says
+ * which it is in: settled 2026-09-15 against the app's own filter screen.
+ *
+ * The threshold is the user's to choose (the app offers 180, 300, 500 and 700
+ * hours), so it is read rather than assumed, and it is what makes the alarm
+ * make sense: the reference unit sat at 714.5 hours against a 500-hour
+ * threshold with `FilterAlarm` triggered.
+ */
+function filterLifeFrom(options: Record<string, string>): {
+  filterHours?: number;
+  filterAlarmHours?: number;
+  filterLife?: number;
+} {
+  const tenths = Number(options.FilterTime);
+  const threshold = Number(options.FilterAlarmTime);
+
+  const filterHours = Number.isFinite(tenths) && tenths >= 0 ? tenths / 10 : undefined;
+  const filterAlarmHours = Number.isFinite(threshold) && threshold > 0 ? threshold : undefined;
+
+  if (filterHours === undefined || filterAlarmHours === undefined) {
+    return { filterHours, filterAlarmHours };
+  }
+
+  // HomeKit wants what is LEFT, and will not take more than 100 or less than 0
+  // — a filter well past its reminder reads as 0 rather than as a negative.
+  const remaining = 100 * (1 - filterHours / filterAlarmHours);
+  return {
+    filterHours,
+    filterAlarmHours,
+    filterLife: Math.round(Math.max(0, Math.min(100, remaining))),
+  };
+}
+
+/**
  * `CoolCapa`/`WarmCapa` in `Mode.options` carry the unit's rated capacity per
  * direction; the reference unit reports `CoolCapa_50` and `WarmCapa_60`. A zero
  * is read as "no hardware for this", and anything unparseable as "unknown"
@@ -223,6 +270,7 @@ export function toRacStatus(device: RacDeviceDocument, settings: RacStatusOption
     speedLevel: firstFinite(device.Wind?.speedLevel),
     maxSpeedLevel: firstFinite(device.Wind?.maxSpeedLevel),
     filterAlarm: (device.Alarms ?? []).some((alarm) => alarm.code === 'FilterAlarm'),
+    ...filterLifeFrom(modeOptions),
     comode: modeOptions.Comode,
     outdoorTemperature: outdoorTemperatureFrom(modeOptions, settings.outdoorTemperatureUnit),
     resources: device.resources ?? [],

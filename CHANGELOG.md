@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The filter's remaining life, next to the alarm that was already there. The
+  unit counts the filter's running time in tenths of an hour (`FilterTime`) and
+  states the cleaning threshold in whole hours (`FilterAlarmTime`) — two
+  adjacent values in the same array, in two different units, neither of them
+  labelled, confirmed against the Samsung app's own filter screen. The
+  threshold is a user setting in that app (180, 300, 500 or 700 hours), so it
+  is read from the unit rather than assumed, and a filter past it reads as 0%
+  rather than as a negative.
+
 - Switches for the modes HomeKit's air conditioner tile has no room for, each
   off by default and added by naming it in the config:
 

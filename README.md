@@ -36,6 +36,7 @@ A single `HeaterCooler` accessory per unit:
 | Fan speed | `Wind.speedLevel` / `Wind.maxSpeedLevel` |
 | Swing | `Wind.direction` |
 | Filter indicator | the `FilterAlarm` entry in `Alarms` |
+| Filter life | `FilterTime` against `FilterAlarmTime`, as a percentage |
 | Outdoor temperature | `Mode.options.OutdoorTemp`, as its own sensor |
 | Convenience modes | `Mode.options.Comode`, as switches you ask for |
 | Dry and fan-only | `Mode.modes`, as switches you ask for |
@@ -45,6 +46,13 @@ Auto/Idle and leaves them alone rather than overwriting a mode you chose in the
 Samsung app — and `modeSwitches` adds a switch for either, which is the only way
 to *set* them from the Home app. Switching one off puts the unit back in the
 mode it was in before.
+
+The filter tile shows how much life is left as well as whether the alarm has
+fired. The unit counts the filter's hours in tenths of an hour and states the
+reminder threshold in whole hours — two adjacent values in two different units,
+neither labelled — and that threshold is yours to set in the Samsung app (180,
+300, 500 or 700 hours), so the plugin reads it rather than assuming it. Resetting
+the counter is still done in the Samsung app; the plugin has no way to write it.
 
 **Convenience modes** — the family WindFree belongs to — are switches too, via
 `convenienceModes`. The unit keeps one convenience mode at a time, so the

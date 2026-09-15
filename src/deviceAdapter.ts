@@ -372,7 +372,7 @@ export class DeviceAdapter {
 const trackedFields = [
   'active', 'mode', 'currentTemperature', 'targetTemperature',
   'speedLevel', 'windDirection', 'filterAlarm', 'connected',
-  'outdoorTemperature', 'comode',
+  'outdoorTemperature', 'comode', 'filterLife',
 ] as const satisfies readonly (keyof RacStatus)[];
 
 function format(value: unknown): string {

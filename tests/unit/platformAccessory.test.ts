@@ -378,6 +378,48 @@ describe('SamsungRacAccessory', () => {
       const { accessory } = await build({ status: { resources: ['Mode', 'Wind'] } });
       expect(accessory.getService(Service.FilterMaintenance)).toBeUndefined();
     });
+
+    it('reports how much of the filter is left', async () => {
+      const { accessory } = await build({
+        status: { filterHours: 250, filterAlarmHours: 500, filterLife: 50 },
+      });
+
+      expect(accessory.getService(Service.FilterMaintenance)
+        ?.findCharacteristic(Characteristic.FilterLifeLevel)?.getHandler?.())
+        .toBe(50);
+    });
+
+    it('leaves the level out for a unit that publishes no hours', async () => {
+      const { accessory } = await build();
+
+      expect(accessory.getService(Service.FilterMaintenance)
+        ?.findCharacteristic(Characteristic.FilterLifeLevel))
+        .toBeUndefined();
+    });
+
+    it('follows the level down without being asked', async () => {
+      const { accessory, adapter, setStatus } = await build({ status: { filterLife: 50 } });
+
+      setStatus({ filterLife: 49 });
+      await pollOnce(adapter.getStatus);
+
+      expect(accessory.getService(Service.FilterMaintenance)
+        ?.findCharacteristic(Characteristic.FilterLifeLevel)?.value)
+        .toBe(49);
+    });
+
+    it('adopts the hours when a unit only starts counting once it runs', async () => {
+      const { accessory, adapter, setStatus } = await build();
+      expect(accessory.getService(Service.FilterMaintenance)
+        ?.findCharacteristic(Characteristic.FilterLifeLevel)).toBeUndefined();
+
+      setStatus({ filterLife: 100 });
+      await pollOnce(adapter.getStatus);
+
+      expect(accessory.getService(Service.FilterMaintenance)
+        ?.findCharacteristic(Characteristic.FilterLifeLevel)?.getHandler?.())
+        .toBe(100);
+    });
   });
 
   describe('outdoor temperature', () => {
