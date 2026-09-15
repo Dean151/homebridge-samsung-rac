@@ -1,5 +1,6 @@
 import {
-  DEFAULT_OUTDOOR_TEMPERATURE_UNIT, DEFAULT_SWING_DIRECTION, DEFAULT_UPDATE_INTERVAL, normaliseConfig,
+  DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT, DEFAULT_OUTDOOR_TEMPERATURE_UNIT, DEFAULT_SWING_DIRECTION,
+  DEFAULT_UPDATE_INTERVAL, normaliseConfig,
 } from '../../src/config';
 
 function logger() {
@@ -14,33 +15,83 @@ describe('normaliseConfig', () => {
       updateInterval: DEFAULT_UPDATE_INTERVAL,
       requestTimeoutMs: 5000,
       swingDirection: DEFAULT_SWING_DIRECTION,
+      outdoorTemperaturePlacement: DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT,
       outdoorTemperatureUnit: DEFAULT_OUTDOOR_TEMPERATURE_UNIT,
     });
   });
 
   describe('the outdoor temperature setting', () => {
-    const settingFor = (outdoorTemperature: unknown, log = logger()) =>
-      normaliseConfig({ platform: 'x', outdoorTemperature } as never, log as never).outdoorTemperatureUnit;
+    const placementFor = (outdoorTemperature: unknown, log = logger()) =>
+      normaliseConfig({ platform: 'x', outdoorTemperature } as never, log as never).outdoorTemperaturePlacement;
 
-    it('defaults to Fahrenheit, the only behaviour seen on real hardware', () => {
-      expect(DEFAULT_OUTDOOR_TEMPERATURE_UNIT).toBe('F');
-      expect(settingFor(undefined)).toBe('F');
+    it('defaults to the sensor sitting on the air conditioner', () => {
+      expect(DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT).toBe('linked');
+      expect(placementFor(undefined)).toBe('linked');
     });
 
-    it('takes either scale, however it is written', () => {
-      expect(settingFor('fahrenheit')).toBe('F');
-      expect(settingFor('Celsius')).toBe('C');
-      expect(settingFor(' c ')).toBe('C');
+    it('gives it an accessory of its own when asked', () => {
+      expect(placementFor('separate')).toBe('separate');
+      expect(placementFor(' Separate ')).toBe('separate');
     });
 
     it('switches the sensor off', () => {
-      expect(settingFor('off')).toBeNull();
+      expect(placementFor('off')).toBeNull();
+      expect(normaliseConfig({ platform: 'x', outdoorTemperature: 'off' } as never, logger() as never)
+        .outdoorTemperatureUnit).toBeNull();
     });
 
     it('falls back to the default rather than silently dropping the sensor', () => {
       const log = logger();
-      expect(settingFor('kelvin', log)).toBe(DEFAULT_OUTDOOR_TEMPERATURE_UNIT);
+      expect(placementFor('sideways', log)).toBe(DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT);
       expect(log.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe('the outdoor temperature scale', () => {
+    const scaleFor = (outdoorTemperatureUnit: unknown, log = logger()) =>
+      normaliseConfig({ platform: 'x', outdoorTemperatureUnit } as never, log as never).outdoorTemperatureUnit;
+
+    it('defaults to Fahrenheit, the only behaviour seen on real hardware', () => {
+      expect(DEFAULT_OUTDOOR_TEMPERATURE_UNIT).toBe('F');
+      expect(scaleFor(undefined)).toBe('F');
+    });
+
+    it('takes either scale, however it is written', () => {
+      expect(scaleFor('fahrenheit')).toBe('F');
+      expect(scaleFor('Celsius')).toBe('C');
+      expect(scaleFor(' c ')).toBe('C');
+    });
+
+    it('falls back to the default rather than silently dropping the sensor', () => {
+      const log = logger();
+      expect(scaleFor('kelvin', log)).toBe(DEFAULT_OUTDOOR_TEMPERATURE_UNIT);
+      expect(log.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe('a config written before the setting was split in two', () => {
+    // 0.2.0 wrote the scale into outdoorTemperature itself. Those configs are
+    // still out there and have to keep behaving exactly as they did.
+    const settingsFor = (outdoorTemperature: unknown) =>
+      normaliseConfig({ platform: 'x', outdoorTemperature } as never, logger() as never);
+
+    it('reads the scale it names, and shows the sensor the only way it could then', () => {
+      expect(settingsFor('celsius')).toMatchObject({
+        outdoorTemperaturePlacement: 'linked',
+        outdoorTemperatureUnit: 'C',
+      });
+      expect(settingsFor('fahrenheit')).toMatchObject({
+        outdoorTemperaturePlacement: 'linked',
+        outdoorTemperatureUnit: 'F',
+      });
+    });
+
+    it('is overridden by the scale picker once that has been saved', () => {
+      const settings = normaliseConfig(
+        { platform: 'x', outdoorTemperature: 'fahrenheit', outdoorTemperatureUnit: 'celsius' } as never,
+        logger() as never,
+      );
+      expect(settings.outdoorTemperatureUnit).toBe('C');
     });
   });
 

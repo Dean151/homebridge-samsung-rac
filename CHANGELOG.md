@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The outdoor sensor can now be published as an accessory of its own, so it can
+  be assigned to a different room from the air conditioner — HomeKit gives a
+  room to a whole accessory, so until now the sensor was stuck in the room of
+  the unit it hangs off. `outdoorTemperature` now says where the sensor goes —
+  `linked` (the default, the previous behaviour), `separate` or `off` — and the
+  scale it reports in moved to its own setting, `outdoorTemperatureUnit`.
+
+  Configs written before this keep working unchanged: `outdoorTemperature` still
+  accepts `fahrenheit` and `celsius`, and such a config shows the sensor on the
+  air conditioner in the scale it names, exactly as it did. The settings UI
+  splits the old value across the two fields when you open it.
+
 ## [0.2.0] - 2026-09-15
 
 ### Fixed

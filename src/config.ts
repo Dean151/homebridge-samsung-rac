@@ -19,6 +19,9 @@ export interface DeviceConfig {
   heating?: boolean;
 }
 
+/** 'linked' hangs the sensor off the air conditioner; 'separate' gives it its own accessory. */
+export type OutdoorTemperaturePlacement = 'linked' | 'separate';
+
 export interface NormalisedConfig {
   devices: DeviceConfig[];
   /** Seconds between status polls. This is a LAN, so it can be brisk. */
@@ -27,8 +30,15 @@ export interface NormalisedConfig {
   /** What to write to Wind.direction when HomeKit asks for swing. */
   swingDirection: string;
   /**
+   * Where the unit's outdoor sensor goes in HomeKit: on the air conditioner
+   * itself, where it takes the AC's room, or as an accessory of its own, which
+   * can be put in a different room. Null leaves it out entirely.
+   */
+  outdoorTemperaturePlacement: OutdoorTemperaturePlacement | null;
+  /**
    * How to read the unit's outdoor sensor, or null not to publish it at all.
    * Not inferable from the unit's own scale — see RacStatusOptions.
+   * Null exactly when the placement is null, so either can be tested for.
    */
   outdoorTemperatureUnit: 'C' | 'F' | null;
   certificateUrl?: string;
@@ -37,21 +47,58 @@ export interface NormalisedConfig {
 export const DEFAULT_UPDATE_INTERVAL = 10;
 export const DEFAULT_REQUEST_TIMEOUT = 5;
 export const DEFAULT_SWING_DIRECTION = 'Up_And_Low';
+export const DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT: OutdoorTemperaturePlacement = 'linked';
 export const DEFAULT_OUTDOOR_TEMPERATURE_UNIT = 'F';
 
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
 /**
- * 'fahrenheit' (the default, and the only behaviour observed on real hardware),
- * 'celsius', or 'off' to leave the sensor out. Anything unrecognised falls back
- * to the default rather than silently disabling a feature the user asked for.
+ * 'linked' (the default), 'separate', or 'off' to leave the sensor out.
+ *
+ * Up to 0.2.0 this key carried the scale instead — 'fahrenheit' or 'celsius' —
+ * and those configs are still out there, meaning "show it", the only way it was
+ * shown then. The scale they name is read by toOutdoorUnit below, so such a
+ * config keeps behaving exactly as it did.
  */
-function toOutdoorUnit(value: unknown, log: Logging): 'C' | 'F' | null {
-  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+function toOutdoorPlacement(value: unknown, log: Logging): OutdoorTemperaturePlacement | null {
+  const raw = text(value);
 
   if (!raw) {
-    return DEFAULT_OUTDOOR_TEMPERATURE_UNIT;
+    return DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT;
   }
   if (raw === 'off' || raw === 'none' || raw === 'false') {
     return null;
+  }
+  if (raw === 'separate' || raw === 'accessory' || raw === 'device') {
+    return 'separate';
+  }
+  if (raw === 'linked' || raw === 'on' || raw === 'true') {
+    return 'linked';
+  }
+  if (raw.startsWith('c') || raw.startsWith('f')) {
+    return 'linked';
+  }
+
+  log.warn(
+    `Ignoring an unrecognised outdoorTemperature setting '${value}'; `
+    + 'showing the sensor on the air conditioner itself.',
+  );
+  return DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT;
+}
+
+/**
+ * The scale the outdoor sensor reports in, which the unit states nowhere — see
+ * RacStatusOptions. Reads `outdoorTemperatureUnit`, falling back to the scale a
+ * pre-0.3.0 config wrote into `outdoorTemperature` itself.
+ */
+function toOutdoorUnit(value: unknown, legacy: unknown, log: Logging): 'C' | 'F' {
+  const carried = text(legacy);
+  const raw = text(value) || (carried.startsWith('c') || carried.startsWith('f') ? carried : '');
+
+  if (!raw) {
+    return DEFAULT_OUTDOOR_TEMPERATURE_UNIT;
   }
   if (raw.startsWith('c')) {
     return 'C';
@@ -61,7 +108,7 @@ function toOutdoorUnit(value: unknown, log: Logging): 'C' | 'F' | null {
   }
 
   log.warn(
-    `Ignoring an unrecognised outdoorTemperature setting '${value}'; `
+    `Ignoring an unrecognised outdoorTemperatureUnit setting '${value}'; `
     + `using ${DEFAULT_OUTDOOR_TEMPERATURE_UNIT === 'F' ? 'Fahrenheit' : 'Celsius'}.`,
   );
   return DEFAULT_OUTDOOR_TEMPERATURE_UNIT;
@@ -126,6 +173,8 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     log.info('No air conditioners are configured yet. Add one in the plugin settings and pair it there.');
   }
 
+  const placement = toOutdoorPlacement(config.outdoorTemperature, log);
+
   return {
     devices,
     updateInterval: Math.max(5, toNumber(config.updateInterval, DEFAULT_UPDATE_INTERVAL)),
@@ -133,7 +182,10 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     swingDirection: typeof config.swingDirection === 'string' && config.swingDirection.trim()
       ? config.swingDirection.trim()
       : DEFAULT_SWING_DIRECTION,
-    outdoorTemperatureUnit: toOutdoorUnit(config.outdoorTemperature, log),
+    outdoorTemperaturePlacement: placement,
+    outdoorTemperatureUnit: placement === null
+      ? null
+      : toOutdoorUnit(config.outdoorTemperatureUnit, config.outdoorTemperature, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,

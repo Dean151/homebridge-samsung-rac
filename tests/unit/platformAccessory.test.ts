@@ -34,12 +34,17 @@ interface Harness {
   adapter: Record<string, jest.Mock>;
   log: { debug: jest.Mock; info: jest.Mock; warn: jest.Mock; error: jest.Mock };
   setStatus: (status: Partial<RacStatus>) => void;
+  /** Only when the harness was built with an outdoor accessory of its own. */
+  outdoor?: FakeAccessory;
+  publish: jest.Mock;
 }
 
 async function build(options: {
   status?: Partial<RacStatus>;
   settings?: Record<string, unknown>;
   accessory?: FakeAccessory;
+  /** Hand the accessory a separate home for the outdoor sensor, as 'separate' does. */
+  outdoor?: FakeAccessory | true;
   failReads?: boolean;
 } = {}): Promise<Harness> {
   let status: RacStatus = { ...baseStatus, ...options.status };
@@ -68,6 +73,12 @@ async function build(options: {
 
   const accessory = options.accessory ?? new FakeAccessory();
 
+  const publish = jest.fn();
+  const outdoorAccessory = options.outdoor
+    ? (options.outdoor === true ? new FakeAccessory('Test AC Outdoor', 'test-uuid-outdoor') : options.outdoor)
+    : undefined;
+  const outdoor = outdoorAccessory ? { accessory: outdoorAccessory, publish } : undefined;
+
   const platform = {
     Service,
     Characteristic,
@@ -77,13 +88,17 @@ async function build(options: {
     settings: { updateInterval: 3600, swingDirection: 'Up_And_Low', ...options.settings },
   };
 
-  await SamsungRacAccessory.create(platform as never, accessory as never, adapter as never);
+  await SamsungRacAccessory.create(
+    platform as never, accessory as never, adapter as never, outdoor as never,
+  );
 
   return {
     accessory,
     heaterCooler: accessory.getService(Service.HeaterCooler) as FakeService,
     adapter: adapter as unknown as Record<string, jest.Mock>,
     log,
+    outdoor: outdoorAccessory,
+    publish,
     setStatus: (next) => {
       status = { ...status, ...next };
     },
@@ -413,6 +428,69 @@ describe('SamsungRacAccessory', () => {
         .toThrow(FakeHapStatusError);
       // Never withdrawn, in case the unit starts reporting it again.
       expect(accessory.getService(Service.TemperatureSensor)).toBeDefined();
+    });
+
+    describe('on an accessory of its own', () => {
+      it('puts the sensor there rather than on the air conditioner', async () => {
+        const { accessory, outdoor, publish } = await build({
+          status: { outdoorTemperature: 21.7 },
+          outdoor: true,
+        });
+
+        expect(outdoor?.getService(Service.TemperatureSensor)
+          ?.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.())
+          .toBe(21.7);
+        // Or the reading would show up twice, in two rooms.
+        expect(accessory.getService(Service.TemperatureSensor)).toBeUndefined();
+        expect(publish).toHaveBeenCalledTimes(1);
+      });
+
+      it('keeps it off HomeKit entirely when the unit reports no reading', async () => {
+        const { outdoor, publish } = await build({ outdoor: true });
+
+        expect(outdoor?.getService(Service.TemperatureSensor)).toBeUndefined();
+        expect(publish).not.toHaveBeenCalled();
+      });
+
+      it('publishes it once a reading finally turns up', async () => {
+        const { outdoor, publish, adapter, setStatus } = await build({ outdoor: true });
+
+        setStatus({ outdoorTemperature: 21.7 });
+        await pollOnce(adapter.getStatus);
+
+        expect(outdoor?.getService(Service.TemperatureSensor)).toBeDefined();
+        expect(publish).toHaveBeenCalledTimes(1);
+      });
+
+      it('pushes a change the unit made on its own', async () => {
+        const { outdoor, adapter, setStatus } = await build({
+          status: { outdoorTemperature: 21.7 },
+          outdoor: true,
+        });
+
+        setStatus({ outdoorTemperature: 18.3 });
+        await pollOnce(adapter.getStatus);
+
+        expect(outdoor?.getService(Service.TemperatureSensor)
+          ?.findCharacteristic(Characteristic.CurrentTemperature)?.value)
+          .toBe(18.3);
+      });
+
+      it('takes the sensor off an air conditioner left carrying one', async () => {
+        // The setting was 'linked' last run, so the cached accessory still has
+        // the service; leaving it there would show the reading in both rooms.
+        const cached = new FakeAccessory();
+        cached.addService(Service.TemperatureSensor);
+
+        const { accessory, outdoor } = await build({
+          status: { outdoorTemperature: 21.7 },
+          accessory: cached,
+          outdoor: true,
+        });
+
+        expect(accessory.getService(Service.TemperatureSensor)).toBeUndefined();
+        expect(outdoor?.getService(Service.TemperatureSensor)).toBeDefined();
+      });
     });
   });
 

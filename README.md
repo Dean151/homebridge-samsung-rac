@@ -56,11 +56,16 @@ steps rather than whole ones, because a whole degree Fahrenheit is 0.56 °C and 
 1 °C step would put half of its setpoints out of reach.
 
 The outdoor sensor is a tile of its own rather than part of the air conditioner
-control. **Which scale it is in is stated nowhere**, and is independent of the
-unit's own setting: the reference unit reports itself in Celsius and this in
-Fahrenheit, in the same document, with only the former labelled. Fahrenheit is
-the default for that reason. If the tile reads far too cold, set
-`outdoorTemperature` to `celsius`; `off` hides it.
+control. By default it sits on the air conditioner, which puts it in that unit's
+room; `outdoorTemperature: "separate"` gives it an accessory of its own instead,
+so the Home app will let you assign it wherever it belongs — an outdoor room, or
+the one you actually look at. `off` hides it.
+
+**Which scale it is in is stated nowhere**, and is independent of the unit's own
+setting: the reference unit reports itself in Celsius and this in Fahrenheit, in
+the same document, with only the former labelled. Fahrenheit is the default for
+that reason. If the tile reads far too cold, set `outdoorTemperatureUnit` to
+`celsius`.
 
 A service only appears once the unit has actually published a reading for it, and
 is never withdrawn afterwards — some units publish nothing until they are running.
@@ -200,7 +205,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
   ],
   "updateInterval": 10,
   "swingDirection": "Up_And_Low",
-  "outdoorTemperature": "fahrenheit"
+  "outdoorTemperature": "linked",
+  "outdoorTemperatureUnit": "fahrenheit"
 }
 ```
 
@@ -212,7 +218,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `devices[].heating` | `auto` | `on` or `off` to override whether Heat is offered. `auto` reads it from the unit, which is right for every unit seen so far. |
 | `updateInterval` | `10` | Seconds between polls; minimum 5. |
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
-| `outdoorTemperature` | `fahrenheit` | The scale the unit's outdoor sensor reports in, or `off` to hide it. Not the same setting as the unit's own scale. |
+| `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
+| `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
 | `requestTimeout` | `5` | Seconds. |
 | `certificateUrl` | community URL | Only if you mirror the certificate yourself. |
 

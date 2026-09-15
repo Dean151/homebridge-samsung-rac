@@ -66,13 +66,24 @@
       "outdoorTemperature": {
         "title": "Outdoor temperature sensor",
         "type": "string",
+        "default": "linked",
+        "oneOf": [
+          { "title": "On \u2014 as a second sensor on the air conditioner (same room)", "enum": ["linked"] },
+          { "title": "On \u2014 as a separate accessory (can be put in another room)", "enum": ["separate"] },
+          { "title": "Off", "enum": ["off"] }
+        ],
+        "description": "Publishes the unit's outdoor sensor as a temperature tile. On the air conditioner it takes that unit's room; as a separate accessory it appears on its own in the Home app, so you can assign it wherever you like \u2014 an outdoor room, say. It only shows up once the unit actually reports a reading."
+      },
+      "outdoorTemperatureUnit": {
+        "title": "Outdoor temperature scale",
+        "type": "string",
         "default": "fahrenheit",
         "oneOf": [
-          { "title": "Show it \u2014 unit reports Fahrenheit (confirmed on TP6X_RAC_16K)", "enum": ["fahrenheit"] },
-          { "title": "Show it \u2014 unit reports Celsius", "enum": ["celsius"] },
-          { "title": "Do not show it", "enum": ["off"] }
+          { "title": "Fahrenheit (confirmed on TP6X_RAC_16K)", "enum": ["fahrenheit"] },
+          { "title": "Celsius", "enum": ["celsius"] }
         ],
-        "description": "Publishes the unit's outdoor sensor as a temperature tile of its own. Which scale it is in is stated nowhere in what the unit reports, and is independent of the unit's own setting: a TP6X_RAC_16K reports itself in Celsius and this in Fahrenheit, measured against a known outdoor temperature. Fahrenheit is the default for that reason. If your tile reads far too cold, your unit reports Celsius here \u2014 switch it."
+        "condition": { "functionBody": "return model.outdoorTemperature !== 'off';" },
+        "description": "The scale the unit reports its outdoor sensor in. Stated nowhere in what the unit reports, and independent of the unit's own setting: a TP6X_RAC_16K reports itself in Celsius and this in Fahrenheit, measured against a known outdoor temperature. Fahrenheit is the default for that reason. If your tile reads far too cold, your unit reports Celsius here \u2014 switch it."
       },
       "requestTimeout": {
         "title": "Request timeout (seconds)",
@@ -97,6 +108,7 @@
     "updateInterval",
     "swingDirection",
     "outdoorTemperature",
+    "outdoorTemperatureUnit",
     {
       "type": "fieldset",
       "title": "Advanced",

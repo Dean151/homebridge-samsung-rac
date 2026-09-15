@@ -386,6 +386,21 @@
       await homebridge.updatePluginConfig([{}]);
     }
 
+    // Up to 0.2.0 outdoorTemperature carried the scale rather than where the
+    // sensor goes, and the picker no longer offers those values — so such a
+    // config would open on an empty field. Split it across the two settings it
+    // became; the plugin reads either shape, and as above nothing reaches
+    // config.json until the user saves.
+    const configs = await homebridge.getPluginConfig();
+    const legacy = String((configs[0] || {}).outdoorTemperature || '').trim().toLowerCase();
+    if (legacy.startsWith('c') || legacy.startsWith('f')) {
+      configs[0] = Object.assign({}, configs[0], {
+        outdoorTemperature: 'linked',
+        outdoorTemperatureUnit: legacy.startsWith('c') ? 'celsius' : 'fahrenheit',
+      });
+      await homebridge.updatePluginConfig(configs);
+    }
+
     homebridge.showSchemaForm();
 
     try {

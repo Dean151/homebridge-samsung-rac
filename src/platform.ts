@@ -17,6 +17,21 @@ interface AccessoryContext {
   uuid?: string;
   /** The user's heat override for this unit, if they set one. */
   heating?: boolean;
+  /** Set on the outdoor sensor's own accessory, to tell the two apart. */
+  outdoor?: boolean;
+}
+
+/**
+ * The outdoor sensor's own accessory, when the user asked for one, handed to
+ * the air conditioner's handler. It publishes itself rather than being
+ * registered up front: whether the unit reports an outdoor reading at all is
+ * only known after the first status read, and some units only start reporting
+ * one once they have been running.
+ */
+export interface OutdoorAccessory {
+  readonly accessory: PlatformAccessory;
+  /** Idempotent: late adoption calls this again on an already-published one. */
+  publish(): void;
 }
 
 export class SamsungRacPlatform implements DynamicPlatformPlugin {
@@ -25,6 +40,8 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
   readonly settings: NormalisedConfig;
 
   private readonly cachedAccessories: PlatformAccessory[] = [];
+  /** UUIDs of outdoor accessories that have reached HomeKit this run. */
+  private readonly published = new Set<string>();
   private readonly handlers: SamsungRacAccessory[] = [];
   private readonly certificates: CertificateStore;
   private readonly tokens: TokenStore;
@@ -143,7 +160,9 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
         // One unit failing to set up must not abort discovery for the rest, and
         // must not escape as an unhandled rejection either.
         try {
-          liveUuids.add(await this.registerDevice(device.host, document, api, documents.length > 1));
+          for (const uuid of await this.registerDevice(device.host, document, api, documents.length > 1)) {
+            liveUuids.add(uuid);
+          }
         } catch (error) {
           allReachable = false;
           this.log.error(
@@ -169,7 +188,7 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     document: RacDeviceDocument,
     api: LocalApi,
     multiple: boolean,
-  ): Promise<string> {
+  ): Promise<string[]> {
     const deviceId = document.id ?? '0';
     // Key on the unit's own uuid rather than its address, so a DHCP move does
     // not orphan the accessory and its automations.
@@ -199,9 +218,13 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
       outdoorTemperatureUnit: this.settings.outdoorTemperatureUnit,
     });
 
+    const outdoor = this.settings.outdoorTemperaturePlacement === 'separate'
+      ? this.outdoorAccessoryFor(uuid, displayName, context)
+      : undefined;
+
     // Populate before HomeKit ever sees the accessory, so its first look
     // already has real values rather than placeholders.
-    this.handlers.push(await SamsungRacAccessory.create(this, accessory, adapter));
+    this.handlers.push(await SamsungRacAccessory.create(this, accessory, adapter, outdoor));
 
     if (existing) {
       this.log.info('Restoring accessory from cache:', displayName);
@@ -212,7 +235,55 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
       this.cachedAccessories.push(accessory);
     }
 
-    return uuid;
+    // An outdoor accessory the handler never published — because this unit
+    // reports no reading, or because the setting changed — is left out of the
+    // live set, so it is pruned like any other accessory that no longer exists.
+    return outdoor && this.published.has(outdoor.accessory.UUID)
+      ? [uuid, outdoor.accessory.UUID]
+      : [uuid];
+  }
+
+  /**
+   * A temperature accessory of its own for the unit's outdoor sensor, keyed off
+   * the air conditioner's uuid so it survives a DHCP move with it. It is only
+   * registered with HomeKit if the handler publishes it.
+   */
+  private outdoorAccessoryFor(
+    parentUuid: string,
+    parentName: string,
+    context: AccessoryContext,
+  ): OutdoorAccessory {
+    const uuid = this.api.hap.uuid.generate(`${parentUuid}:outdoor`);
+    const displayName = `${parentName} Outdoor`;
+    const cached = this.cachedAccessories.find((candidate) => candidate.UUID === uuid);
+    const accessory = cached ?? new this.api.platformAccessory(displayName, uuid);
+    accessory.context = { ...accessory.context, ...context, outdoor: true };
+
+    accessory.getService(this.Service.AccessoryInformation)
+      ?.setCharacteristic(this.Characteristic.Manufacturer, 'Samsung')
+      .setCharacteristic(this.Characteristic.Model, context.model ?? 'Room Air Conditioner')
+      // Distinct from the air conditioner's: HomeKit expects a serial per
+      // accessory, and these two are one physical unit.
+      .setCharacteristic(this.Characteristic.SerialNumber, `${context.uuid ?? parentUuid}-outdoor`);
+
+    return {
+      accessory,
+      publish: () => {
+        if (this.published.has(uuid)) {
+          return;
+        }
+        this.published.add(uuid);
+
+        if (cached) {
+          this.log.info('Restoring the outdoor sensor from cache:', displayName);
+          this.api.updatePlatformAccessories([accessory]);
+        } else {
+          this.log.info('Adding a new accessory for the outdoor sensor:', displayName);
+          this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+          this.cachedAccessories.push(accessory);
+        }
+      },
+    };
   }
 
   /**

@@ -1,5 +1,5 @@
 import type { Characteristic, CharacteristicValue, PlatformAccessory, Service, WithUUID } from 'homebridge';
-import type { SamsungRacPlatform } from './platform';
+import type { OutdoorAccessory, SamsungRacPlatform } from './platform';
 import type { ApplyResult, DeviceAdapter } from './deviceAdapter';
 import type { RacStatus } from './racStatus';
 import { setpointStep } from './temperature';
@@ -60,8 +60,9 @@ export class SamsungRacAccessory {
     platform: SamsungRacPlatform,
     accessory: PlatformAccessory,
     adapter: DeviceAdapter,
+    outdoor?: OutdoorAccessory,
   ): Promise<SamsungRacAccessory> {
-    const instance = new SamsungRacAccessory(platform, accessory, adapter);
+    const instance = new SamsungRacAccessory(platform, accessory, adapter, outdoor);
     await instance.initialize();
     return instance;
   }
@@ -70,6 +71,12 @@ export class SamsungRacAccessory {
     private readonly platform: SamsungRacPlatform,
     private readonly accessory: PlatformAccessory,
     private readonly adapter: DeviceAdapter,
+    /**
+     * Where the outdoor sensor goes when the user asked for one of its own, so
+     * it can live in a different room from the air conditioner. Undefined hangs
+     * it off this accessory instead.
+     */
+    private readonly outdoor?: OutdoorAccessory,
   ) {
     this.status = emptyStatus();
 
@@ -340,8 +347,19 @@ export class SamsungRacAccessory {
     return Number.isFinite(this.status.outdoorTemperature);
   }
 
+  /** The accessory the outdoor sensor belongs on, per the user's setting. */
+  private outdoorHost(): PlatformAccessory {
+    return this.outdoor?.accessory ?? this.accessory;
+  }
+
+  private outdoorService(): Service | undefined {
+    return this.outdoorHost().getService(this.platform.Service.TemperatureSensor);
+  }
+
   /**
-   * The unit's outdoor sensor, as a temperature sensor of its own.
+   * The unit's outdoor sensor, as a temperature sensor of its own — either on
+   * this accessory or, when the user asked for it, on an accessory of its own
+   * that HomeKit will let them put in a different room.
    *
    * Its scale is a config decision rather than something the document states —
    * the reference unit reports this in Fahrenheit while reporting itself in
@@ -349,17 +367,29 @@ export class SamsungRacAccessory {
    * discarded. See RacStatusOptions.
    */
   private configureOutdoorSensor(): void {
-    const existing = this.accessory.getService(this.platform.Service.TemperatureSensor);
+    const host = this.outdoorHost();
+
+    // A cached accessory can still carry the sensor from a run under the other
+    // setting; the one that no longer belongs there has to go, or the reading
+    // would show up twice.
+    if (host !== this.accessory) {
+      const stray = this.accessory.getService(this.platform.Service.TemperatureSensor);
+      if (stray) {
+        this.accessory.removeService(stray);
+      }
+    }
+
+    const existing = host.getService(this.platform.Service.TemperatureSensor);
 
     if (!this.hasOutdoorReading()) {
       if (existing) {
-        this.accessory.removeService(existing);
+        host.removeService(existing);
       }
       this.platform.log.info(`${this.accessory.displayName}: no outdoor temperature reading.`);
       return;
     }
 
-    const service = existing ?? this.accessory.addService(this.platform.Service.TemperatureSensor);
+    const service = existing ?? host.addService(this.platform.Service.TemperatureSensor);
     service.setCharacteristic(this.platform.Characteristic.Name, `${this.accessory.displayName} Outdoor`);
     service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
       .onGet(this.getOutdoorTemperature.bind(this));
@@ -368,9 +398,14 @@ export class SamsungRacAccessory {
     // service reads as part of the control it hangs off; this is an independent
     // measurement, and it is more useful as a tile of its own.
 
+    // Only now is there something worth showing, so this is where an accessory
+    // of its own reaches HomeKit — including units that only start reporting a
+    // reading hours into a run.
+    this.outdoor?.publish();
+
     this.platform.log.info(
       `${this.accessory.displayName}: outdoor temperature available `
-      + `(${this.status.outdoorTemperature}°C).`,
+      + `(${this.status.outdoorTemperature}°C)${this.outdoor ? ', as an accessory of its own' : ''}.`,
     );
   }
 
@@ -410,7 +445,7 @@ export class SamsungRacAccessory {
       this.configureFilter();
     }
 
-    if (!this.accessory.getService(this.platform.Service.TemperatureSensor) && this.hasOutdoorReading()) {
+    if (!this.outdoorService() && this.hasOutdoorReading()) {
       this.platform.log.info(
         `${this.accessory.displayName}: an outdoor temperature is now reported by the unit.`,
       );
@@ -758,7 +793,7 @@ export class SamsungRacAccessory {
       const filter = this.accessory.getService(this.platform.Service.FilterMaintenance);
       filter?.updateCharacteristic(this.platform.Characteristic.FilterChangeIndication, this.filterChange());
 
-      const outdoor = this.accessory.getService(this.platform.Service.TemperatureSensor);
+      const outdoor = this.outdoorService();
       if (outdoor && this.hasOutdoorReading()) {
         outdoor.updateCharacteristic(
           this.platform.Characteristic.CurrentTemperature, this.status.outdoorTemperature as number);
