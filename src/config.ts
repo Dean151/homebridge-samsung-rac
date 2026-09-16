@@ -19,6 +19,23 @@ export interface DeviceConfig {
   heating?: boolean;
 }
 
+/**
+ * One switch the user asked for, in either group.
+ *
+ * `value` is the unit's own word — what gets written, what the switch reads
+ * itself back from, and what its HomeKit subtype is keyed on. Renaming a switch
+ * therefore never disturbs the automations pointing at it.
+ */
+export interface ModeSwitchConfig {
+  value: string;
+  /**
+   * What to call it in the Home app, used exactly as written — no air
+   * conditioner name in front of it. Undefined falls back to the derived
+   * '<air conditioner> <mode>', which is what every config before 0.4.0 got.
+   */
+  name?: string;
+}
+
 /** 'linked' hangs the sensor off the air conditioner; 'separate' gives it its own accessory. */
 export type OutdoorTemperaturePlacement = 'linked' | 'separate';
 
@@ -65,13 +82,13 @@ export interface NormalisedConfig {
    * default would be a guess that leaves dead switches on a model whose
    * vocabulary differs. See RacStatus.comode.
    */
-  convenienceModes: string[];
+  convenienceModes: ModeSwitchConfig[];
   /**
    * Which `Mode.modes` values get a switch — the modes `HeaterCooler` has no
    * way to express, `Dry` and `Wind`. Without one they can only be reached from
    * the Samsung app; the plugin reports them as Auto and leaves them alone.
    */
-  modeSwitches: string[];
+  modeSwitches: ModeSwitchConfig[];
   certificateUrl?: string;
 }
 
@@ -220,8 +237,8 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     hideOutdoorTemperatureWhenOff: toBoolean(config.hideOutdoorTemperatureWhenOff, 'hideOutdoorTemperatureWhenOff', log),
     freezeIndoorTemperatureWhenOff: toBoolean(
       config.freezeIndoorTemperatureWhenOff, 'freezeIndoorTemperatureWhenOff', log),
-    convenienceModes: toNameList(config.convenienceModes, 'convenienceModes', log),
-    modeSwitches: toNameList(config.modeSwitches, 'modeSwitches', log),
+    convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
+    modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
@@ -229,13 +246,18 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
 }
 
 /**
- * A list of device-side names — `Comode` values, or modes — from an array or a
- * comma-separated string, since a hand-written config.json may say either.
+ * The switches asked for in one group, from any of the shapes a config may hold.
  *
- * Case is the unit's business, so what the user wrote is kept as written and
- * only duplicates that differ by case are dropped.
+ * Three of them, because this key has had two lives. Up to 0.3.1 it was a list
+ * of the unit's own names and nothing else — `["Quiet"]`, or `"Quiet,Comfort"`
+ * from a hand-written config.json — and those still mean exactly what they
+ * meant. From 0.4.0 an entry can instead be an object carrying the name to show
+ * in the Home app alongside the unit's word for the mode.
+ *
+ * Case is the unit's business, so `value` is kept as written and only
+ * duplicates that differ by case are dropped.
  */
-function toNameList(value: unknown, key: string, log: Logging): string[] {
+function toSwitchList(value: unknown, key: string, log: Logging): ModeSwitchConfig[] {
   const raw = Array.isArray(value)
     ? value
     : typeof value === 'string'
@@ -247,28 +269,62 @@ function toNameList(value: unknown, key: string, log: Logging): string[] {
     return [];
   }
 
-  const names: string[] = [];
+  const entries: ModeSwitchConfig[] = [];
   const seen = new Set<string>();
 
-  for (const entry of raw) {
-    const name = typeof entry === 'string' ? entry.trim() : '';
-    if (!name) {
+  for (const item of raw) {
+    const entry = toSwitchEntry(item, key, log);
+    if (!entry) {
       continue;
     }
     // A switch for 'Off' would be the off position of every other switch in the
     // group, permanently disagreeing with them.
-    if (name.toLowerCase() === 'off') {
+    if (entry.value.toLowerCase() === 'off') {
       log.warn(`Ignoring 'Off' in ${key}: switching a convenience mode off is what the other switches do.`);
       continue;
     }
-    if (seen.has(name.toLowerCase())) {
+    if (seen.has(entry.value.toLowerCase())) {
+      log.warn(`Ignoring a second ${key} entry for '${entry.value}'; one switch per mode.`);
       continue;
     }
-    seen.add(name.toLowerCase());
-    names.push(name);
+    seen.add(entry.value.toLowerCase());
+    entries.push(entry);
   }
 
-  return names;
+  return entries;
+}
+
+/**
+ * One entry: the unit's name on its own, or an object pairing it with the name
+ * to show. `mode` and `value` both name the mode, since neither spelling is the
+ * obvious one for both groups and a hand-written config may reach for either.
+ */
+function toSwitchEntry(item: unknown, key: string, log: Logging): ModeSwitchConfig | null {
+  if (typeof item === 'string') {
+    const value = item.trim();
+    return value ? { value } : null;
+  }
+
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    log.warn(`Ignoring a ${key} entry that is neither a mode name nor an object naming one.`);
+    return null;
+  }
+
+  const candidate = item as { mode?: unknown; value?: unknown; name?: unknown };
+  const value = trimmed(candidate.mode) || trimmed(candidate.value);
+
+  if (!value) {
+    // A name with no mode behind it would publish a switch wired to nothing.
+    log.warn(`Ignoring a ${key} entry with no mode name in it.`);
+    return null;
+  }
+
+  const name = trimmed(candidate.name);
+  return name ? { value, name } : { value };
+}
+
+function trimmed(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 /**

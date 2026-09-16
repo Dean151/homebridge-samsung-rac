@@ -66,22 +66,57 @@
       "convenienceModes": {
         "title": "Convenience mode switches",
         "type": "array",
-        "uniqueItems": true,
+        "description": "Adds a switch to the Home app for each convenience mode you add \u2014 the family WindFree belongs to. None are added by default: the unit reports the mode it is in but never the ones it would accept, so there is nothing to detect from, and a switch for a name your model does not know would refuse to stay on. The six offered here are the ones a TP6X_RAC_16K applies, confirmed by read-back. Only one convenience mode runs at a time, so switching one on switches the others off. Which of them your unit calls WindFree is not something it says \u2014 try them, then give the one that is it a name.",
         "items": {
-          "type": "string",
-          "enum": ["Comfort", "Quiet", "Speed", "Smart", "2Step", "Sleep"]
-        },
-        "description": "Adds a switch to the Home app for each convenience mode you tick \u2014 the family WindFree belongs to. None are added by default: the unit reports the mode it is in but never the ones it would accept, so there is nothing to detect from, and a switch for a name your model does not know would refuse to stay on. The six offered here are the ones a TP6X_RAC_16K applies, confirmed by read-back. Only one convenience mode runs at a time, so switching one on switches the others off. Which of them your unit calls WindFree is not something it says \u2014 try them and rename the switch in the Home app."
+          "type": "object",
+          "properties": {
+            "mode": {
+              "title": "Mode",
+              "type": "string",
+              "required": true,
+              "default": "Quiet",
+              "oneOf": [
+                { "title": "Comfort", "enum": ["Comfort"] },
+                { "title": "Quiet", "enum": ["Quiet"] },
+                { "title": "Speed", "enum": ["Speed"] },
+                { "title": "Smart", "enum": ["Smart"] },
+                { "title": "2Step", "enum": ["2Step"] },
+                { "title": "Sleep", "enum": ["Sleep"] }
+              ],
+              "description": "The unit's own word for it. This is what gets sent, and what the switch's HomeKit identity is built from \u2014 so a switch keeps its automations however it is named below."
+            },
+            "name": {
+              "title": "Name in the Home app",
+              "type": "string",
+              "description": "Optional. Used exactly as you write it, with no air conditioner name in front of it \u2014 call the one your unit uses for WindFree 'WindFree' and that is what the tile reads. Leave it empty for '<air conditioner> <mode>', which is what tells two units' Quiet switches apart."
+            }
+          }
+        }
       },
       "modeSwitches": {
         "title": "Dry and fan-only switches",
         "type": "array",
-        "uniqueItems": true,
+        "description": "Adds a switch for a mode HomeKit's air conditioner tile cannot express. Dry and fan-only (the unit calls it Wind) have no equivalent there, so without a switch they can only be set from the Samsung app \u2014 the plugin reports them as Auto and leaves them alone. Switching one off puts the unit back in the mode it was in before.",
         "items": {
-          "type": "string",
-          "enum": ["Dry", "Wind"]
-        },
-        "description": "Adds a switch for a mode HomeKit's air conditioner tile cannot express. Dry and fan-only (the unit calls it Wind) have no equivalent there, so without a switch they can only be set from the Samsung app \u2014 the plugin reports them as Auto and leaves them alone. Switching one off puts the unit back in the mode it was in before."
+          "type": "object",
+          "properties": {
+            "mode": {
+              "title": "Mode",
+              "type": "string",
+              "required": true,
+              "default": "Dry",
+              "oneOf": [
+                { "title": "Dry", "enum": ["Dry"] },
+                { "title": "Fan only (the unit calls it Wind)", "enum": ["Wind"] }
+              ]
+            },
+            "name": {
+              "title": "Name in the Home app",
+              "type": "string",
+              "description": "Optional. Used exactly as you write it, with no air conditioner name in front of it. Leave it empty for '<air conditioner> <mode>'."
+            }
+          }
+        }
       },
       "outdoorTemperature": {
         "title": "Outdoor temperature sensor",
@@ -140,8 +175,18 @@
     },
     "updateInterval",
     "swingDirection",
-    "convenienceModes",
-    "modeSwitches",
+    {
+      "key": "convenienceModes",
+      "type": "array",
+      "buttonText": "Add a convenience mode switch",
+      "items": ["convenienceModes[].mode", "convenienceModes[].name"]
+    },
+    {
+      "key": "modeSwitches",
+      "type": "array",
+      "buttonText": "Add a dry or fan-only switch",
+      "items": ["modeSwitches[].mode", "modeSwitches[].name"]
+    },
     "outdoorTemperature",
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",

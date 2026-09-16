@@ -19,6 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   temperature is deliberately left alone: a "No Response" there would take the
   whole tile with it, and with it any way to switch the unit back on.
 
+- Switches can be named. An entry in `convenienceModes` or `modeSwitches` can
+  now be `{ "mode": "Quiet", "name": "WindFree" }` rather than a bare `"Quiet"`,
+  and the name is used exactly as written — no air conditioner name in front of
+  it. Which convenience mode a unit calls WindFree is stated nowhere, so the one
+  that turns out to be it can finally say so. An entry without a name keeps the
+  derived `<air conditioner> <mode>`, which is what tells two units' Quiet
+  switches apart.
+
+  The switch's HomeKit identity is still built from the mode, not the name, so
+  naming one leaves the automations pointing at it alone, and a switch already
+  published under the derived name is renamed in place rather than published
+  again. A rename made in the Home app continues to win over both.
+
+  Bare mode names are still read and still mean what they meant, and opening
+  the plugin settings rewrites an old list into the new shape.
+
 - `freezeIndoorTemperatureWhenOff`, off by default: the same unreliability on
   the unit's own room sensor, which some units report oddly with the fan
   stopped. The air conditioner tile then holds the last temperature read while

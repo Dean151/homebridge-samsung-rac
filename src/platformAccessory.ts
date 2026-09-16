@@ -2,6 +2,7 @@ import type { Characteristic, CharacteristicValue, PlatformAccessory, Service, W
 import type { OutdoorAccessory, SamsungRacPlatform } from './platform';
 import type { ApplyResult, DeviceAdapter } from './deviceAdapter';
 import type { RacStatus } from './racStatus';
+import type { ModeSwitchConfig } from './config';
 import { setpointStep } from './temperature';
 
 /**
@@ -33,8 +34,13 @@ const switchLabels: Record<string, string> = {
 /** Subtype prefixes for the switches this plugin owns, so it only removes its own. */
 const switchSubtypes = { comode: 'comode-', mode: 'mode-' } as const;
 
-function labelFor(name: string): string {
-  return switchLabels[name.toLowerCase()] ?? name;
+/**
+ * What to call a switch in the log, and the tail of its HomeKit name when the
+ * user has not given one: their own name if they did, else the tidied-up form
+ * of the unit's word, else the unit's word as it stands.
+ */
+function labelFor(entry: ModeSwitchConfig): string {
+  return entry.name ?? switchLabels[entry.value.toLowerCase()] ?? entry.value;
 }
 
 /**
@@ -50,7 +56,10 @@ interface ModeSwitch {
   subtype: string;
   /** Which field this switch is backed by, and so which switches it excludes. */
   group: 'comode' | 'mode';
+  /** Short, for the log. */
   label: string;
+  /** What the Home app shows, unless the user has since renamed it there. */
+  displayName: string;
   /** Whether the unit publishes the field this switch is backed by at all. */
   available: (status: RacStatus) => boolean;
   isOn: (status: RacStatus) => boolean;
@@ -509,14 +518,29 @@ export class SamsungRacAccessory {
    * from, and a guessed default would leave switches that cannot work on a
    * model whose vocabulary differs. `probe writes` is how a name gets confirmed.
    */
+  /**
+   * A name the user wrote is used exactly as written — that is the whole point
+   * of writing one, and prefixing it would put the air conditioner's name in
+   * front of a name chosen to stand on its own. Without one the switch keeps
+   * the derived '<air conditioner> <mode>', which is what tells two units'
+   * Quiet switches apart in a flat list.
+   */
+  private switchDisplayName(entry: ModeSwitchConfig): string {
+    return entry.name ?? `${this.accessory.displayName} ${labelFor(entry)}`;
+  }
+
   private modeSwitchSpecs(): ModeSwitch[] {
     const specs: ModeSwitch[] = [];
 
-    for (const name of this.platform.settings.convenienceModes) {
+    for (const entry of this.platform.settings.convenienceModes) {
+      const name = entry.value;
       specs.push({
+        // Keyed on the unit's word, never on the label: renaming a switch must
+        // not move the subtype the user's automations point at.
         subtype: `${switchSubtypes.comode}${name.toLowerCase()}`,
         group: 'comode',
-        label: labelFor(name),
+        label: labelFor(entry),
+        displayName: this.switchDisplayName(entry),
         available: (status) => typeof status.comode === 'string' && status.comode.length > 0,
         isOn: (status) => status.comode?.toLowerCase() === name.toLowerCase(),
         // Off is the one value every unit that has the field agrees on: it is
@@ -525,11 +549,13 @@ export class SamsungRacAccessory {
       });
     }
 
-    for (const name of this.platform.settings.modeSwitches) {
+    for (const entry of this.platform.settings.modeSwitches) {
+      const name = entry.value;
       specs.push({
         subtype: `${switchSubtypes.mode}${name.toLowerCase()}`,
         group: 'mode',
-        label: labelFor(name),
+        label: labelFor(entry),
+        displayName: this.switchDisplayName(entry),
         available: (status) => status.mode.length > 0,
         isOn: (status) => status.mode.toLowerCase() === name.toLowerCase(),
         write: (on) => {
@@ -598,10 +624,9 @@ export class SamsungRacAccessory {
         continue;
       }
 
-      const name = `${this.accessory.displayName} ${spec.label}`;
       const service = this.modeSwitchService(spec)
-        ?? this.accessory.addService(this.platform.Service.Switch, name, spec.subtype);
-      this.nameService(this.accessory, service, spec.subtype, name);
+        ?? this.accessory.addService(this.platform.Service.Switch, spec.displayName, spec.subtype);
+      this.nameService(this.accessory, service, spec.subtype, spec.displayName);
       service.getCharacteristic(this.platform.Characteristic.On)
         .onGet(() => this.getModeSwitch(spec))
         .onSet((value) => this.setModeSwitch(spec, value));
@@ -1178,7 +1203,7 @@ export class SamsungRacAccessory {
       return;
     }
     const stoodFor = this.platform.settings.modeSwitches
-      .some((name) => name.toLowerCase() === mode.toLowerCase());
+      .some((entry) => entry.value.toLowerCase() === mode.toLowerCase());
     if (!stoodFor) {
       this.lastPlainMode = mode;
     }

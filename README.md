@@ -65,9 +65,43 @@ for a name your model does not know would simply refuse to stay on. A
 TP6X_RAC_16K applies `Comfort`, `Quiet`, `Speed`, `Smart`, `2Step` and `Sleep`,
 confirmed by read-back; `WindFree` and `SoftCool` are not names it knows, so one
 of those six is what it calls WindFree. Which one is stated nowhere — try them,
-and rename the switch in the Home app to whatever it turns out to be. A rename
-made there is kept: it comes back to the plugin and is stored with the
-accessory, rather than being undone at the next restart.
+and name the one that turns out to be it.
+
+### Naming the switches
+
+An entry in either list can be a bare mode name or an object carrying the name
+to show in the Home app:
+
+```json
+"convenienceModes": [
+  { "mode": "Quiet", "name": "WindFree" },
+  "Comfort"
+],
+"modeSwitches": [
+  { "mode": "Wind", "name": "Ventilation" }
+]
+```
+
+A name you write is used **exactly as written** — no air conditioner name in
+front of it, which is the point of writing one. An entry without a name keeps
+the derived `<air conditioner> <mode>`, so `Comfort` above still reads "Living
+Room AC Comfort"; that prefix is what tells two units' Quiet switches apart in a
+flat list, which is why it is still the default.
+
+`mode` is the unit's own word, and it is what the switch's HomeKit identity is
+built from. Renaming a switch therefore never disturbs the automations pointing
+at it — and a switch already published under the derived name is renamed in
+place rather than published a second time.
+
+A rename made in the Home app still wins over the config, and is kept: it comes
+back to the plugin and is stored with the accessory, rather than being undone at
+the next restart. So if a switch you have already renamed there ignores the name
+you set here, that is why — clear it in the Home app and the config name takes
+over.
+
+Both shapes are read, so `"convenienceModes": ["Quiet"]` keeps meaning what it
+always did; opening the plugin settings rewrites such a list into the object
+form for you.
 
 **Heat is offered even though the unit denies supporting it.** The reference
 unit lists `Cool`, `Dry`, `Wind` and `Auto` as its supported modes and leaves
@@ -268,8 +302,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
   ],
   "updateInterval": 10,
   "swingDirection": "Up_And_Low",
-  "convenienceModes": ["Quiet"],
-  "modeSwitches": ["Dry"],
+  "convenienceModes": [{ "mode": "Quiet", "name": "WindFree" }],
+  "modeSwitches": [{ "mode": "Dry" }],
   "outdoorTemperature": "linked",
   "outdoorTemperatureUnit": "fahrenheit",
   "hideOutdoorTemperatureWhenOff": false,
@@ -285,8 +319,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `devices[].heating` | `auto` | `on` or `off` to override whether Heat is offered. `auto` reads it from the unit, which is right for every unit seen so far. |
 | `updateInterval` | `10` | Seconds between polls; minimum 5. |
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
-| `convenienceModes` | none | `Comode` values to publish a switch for, e.g. `["Quiet"]`. One runs at a time, so the switches act as one group. |
-| `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind`, the two HomeKit's air conditioner tile cannot express. |
+| `convenienceModes` | none | `Comode` values to publish a switch for, as `"Quiet"` or `{ "mode": "Quiet", "name": "WindFree" }`. One runs at a time, so the switches act as one group. |
+| `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind`, the two HomeKit's air conditioner tile cannot express. Same two shapes. |
 | `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
 | `hideOutdoorTemperatureWhenOff` | `false` | Stop reporting the outdoor tile while the unit is off, for units whose reading is only trustworthy when running. |

@@ -230,20 +230,20 @@ describe('normaliseConfig', () => {
     });
 
     it('keeps the names as written, since the casing is the unit\'s business', () => {
-      expect(modesFor(['Quiet', '2Step'])).toEqual(['Quiet', '2Step']);
+      expect(modesFor(['Quiet', '2Step'])).toEqual([{ value: 'Quiet' }, { value: '2Step' }]);
     });
 
     it('accepts a comma-separated string, which a hand-written config may well hold', () => {
-      expect(modesFor('Quiet, Comfort')).toEqual(['Quiet', 'Comfort']);
+      expect(modesFor('Quiet, Comfort')).toEqual([{ value: 'Quiet' }, { value: 'Comfort' }]);
     });
 
     it('drops blanks and case-insensitive duplicates', () => {
-      expect(modesFor(['Quiet', '', '  ', 'quiet'])).toEqual(['Quiet']);
+      expect(modesFor(['Quiet', '', '  ', 'quiet'])).toEqual([{ value: 'Quiet' }]);
     });
 
     it('refuses Off, which is what every other switch in the group already means', () => {
       const log = logger();
-      expect(modesFor(['Off', 'Quiet'], log)).toEqual(['Quiet']);
+      expect(modesFor(['Off', 'Quiet'], log)).toEqual([{ value: 'Quiet' }]);
       expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('convenienceModes'));
     });
 
@@ -256,7 +256,52 @@ describe('normaliseConfig', () => {
     it('reads the mode switches the same way', () => {
       const settings = normaliseConfig(
         { platform: 'x', modeSwitches: ['Dry', 'Wind', 'dry'] } as never, logger() as never);
-      expect(settings.modeSwitches).toEqual(['Dry', 'Wind']);
+      expect(settings.modeSwitches).toEqual([{ value: 'Dry' }, { value: 'Wind' }]);
+    });
+
+    describe('naming a switch', () => {
+      it('carries the name alongside the mode', () => {
+        expect(modesFor([{ mode: 'Quiet', name: 'Silence' }]))
+          .toEqual([{ value: 'Quiet', name: 'Silence' }]);
+      });
+
+      it('takes value as a spelling of mode, since neither is obvious for both groups', () => {
+        expect(modesFor([{ value: 'Quiet', name: 'Silence' }]))
+          .toEqual([{ value: 'Quiet', name: 'Silence' }]);
+      });
+
+      it('leaves an unnamed object exactly where a bare string would leave it', () => {
+        expect(modesFor([{ mode: 'Quiet' }])).toEqual([{ value: 'Quiet' }]);
+        expect(modesFor([{ mode: 'Quiet', name: '   ' }])).toEqual([{ value: 'Quiet' }]);
+      });
+
+      it('mixes the two shapes, so one named entry need not rewrite the rest', () => {
+        expect(modesFor(['Comfort', { mode: 'Quiet', name: 'Silence' }]))
+          .toEqual([{ value: 'Comfort' }, { value: 'Quiet', name: 'Silence' }]);
+      });
+
+      it('still counts a named entry as the same mode when deduplicating', () => {
+        const log = logger();
+        expect(modesFor([{ mode: 'Quiet', name: 'Silence' }, 'quiet'], log))
+          .toEqual([{ value: 'Quiet', name: 'Silence' }]);
+        expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('one switch per mode'));
+      });
+
+      it('drops a name with no mode behind it, which would wire a switch to nothing', () => {
+        const log = logger();
+        expect(modesFor([{ name: 'Silence' }], log)).toEqual([]);
+        expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('convenienceModes'));
+      });
+
+      it('drops an entry that is neither a name nor an object, and says so', () => {
+        const log = logger();
+        expect(modesFor([42, 'Quiet'], log)).toEqual([{ value: 'Quiet' }]);
+        expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('convenienceModes'));
+      });
+
+      it('refuses Off however it is spelled', () => {
+        expect(modesFor([{ mode: 'Off', name: 'Nothing' }], logger())).toEqual([]);
+      });
     });
   });
 

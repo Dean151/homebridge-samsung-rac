@@ -401,6 +401,32 @@
       await homebridge.updatePluginConfig(configs);
     }
 
+    // Up to 0.3.1 the two switch lists held bare mode names; from 0.4.0 each
+    // entry is an object, so that a switch can carry the name to show in the
+    // Home app. The plugin still reads the old shape, but the form below does
+    // not — an untouched list would render as empty rows and be saved away.
+    // Rewrite it to the shape the form knows; the modes, and so the subtypes
+    // the user's automations point at, are unchanged.
+    const switchLists = await homebridge.getPluginConfig();
+    const block = switchLists[0] || {};
+    const migrated = {};
+    ['convenienceModes', 'modeSwitches'].forEach((key) => {
+      const list = block[key];
+      // A comma-separated string is the other shape a hand-written config may
+      // hold; splitting it here is what the plugin does with it anyway.
+      const entries = typeof list === 'string' ? list.split(',') : list;
+      if (!Array.isArray(entries) || !entries.some((entry) => typeof entry === 'string')) {
+        return;
+      }
+      migrated[key] = entries
+        .map((entry) => (typeof entry === 'string' ? { mode: entry.trim() } : entry))
+        .filter((entry) => entry && entry.mode);
+    });
+    if (Object.keys(migrated).length) {
+      switchLists[0] = Object.assign({}, block, migrated);
+      await homebridge.updatePluginConfig(switchLists);
+    }
+
     homebridge.showSchemaForm();
 
     try {

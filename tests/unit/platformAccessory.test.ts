@@ -1,5 +1,6 @@
 import { SamsungRacAccessory } from '../../src/platformAccessory';
 import type { RacStatus } from '../../src/racStatus';
+import type { ModeSwitchConfig } from '../../src/config';
 import {
   Characteristic, FakeAccessory, FakeHapStatusError, FakeService, HAPStatus, Service,
 } from '../mocks/hap.mock';
@@ -37,6 +38,14 @@ interface Harness {
   /** Only when the harness was built with an outdoor accessory of its own. */
   outdoor?: FakeAccessory;
   publish: jest.Mock;
+}
+
+/** `'Quiet'` and `{ value: 'Quiet', name: 'Silence' }` are both allowed here. */
+function switchList(value: unknown): ModeSwitchConfig[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((entry) => (typeof entry === 'string' ? { value: entry } : entry as ModeSwitchConfig));
 }
 
 async function build(options: {
@@ -92,10 +101,12 @@ async function build(options: {
     settings: {
       updateInterval: 3600,
       swingDirection: 'Up_And_Low',
-      // Empty by default, exactly as a config that has not asked for switches.
-      convenienceModes: [],
-      modeSwitches: [],
       ...options.settings,
+      // Tests name modes as plain strings; the real config carries objects, so
+      // an entry that wants a custom name can still be written out in full.
+      // Empty by default, exactly as a config that has not asked for switches.
+      convenienceModes: switchList(options.settings?.convenienceModes),
+      modeSwitches: switchList(options.settings?.modeSwitches),
     },
   };
 
@@ -841,6 +852,86 @@ describe('SamsungRacAccessory', () => {
       expect(switches(accessory).map((service) => service.displayName))
         .toEqual(['Test AC Quiet', 'Test AC Comfort']);
       expect(heaterCooler.linkedServices).toEqual(expect.arrayContaining(switches(accessory)));
+    });
+
+    describe('named in the config', () => {
+      it('uses the name exactly as written, with no air conditioner in front of it', async () => {
+        const { accessory } = await build({
+          status: { comode: 'Off' },
+          settings: { convenienceModes: [{ value: 'Quiet', name: 'Silence' }] },
+        });
+
+        expect(switches(accessory)
+          .map((service) => service.findCharacteristic(Characteristic.ConfiguredName)?.value))
+          .toEqual(['Silence']);
+      });
+
+      it('keys the subtype on the unit\'s word, so renaming does not move an automation', async () => {
+        const { accessory } = await build({
+          status: { comode: 'Off' },
+          settings: { convenienceModes: [{ value: 'Quiet', name: 'Silence' }] },
+        });
+
+        expect(switches(accessory).map((service) => service.subtype)).toEqual(['comode-quiet']);
+      });
+
+      it('still writes the unit\'s word, not the name shown', async () => {
+        const { accessory, adapter } = await build({
+          status: { comode: 'Off' },
+          settings: { convenienceModes: [{ value: 'Quiet', name: 'Silence' }] },
+        });
+
+        await switches(accessory)[0].findCharacteristic(Characteristic.On)?.setHandler?.(true);
+
+        expect(adapter.setComode).toHaveBeenCalledWith('Quiet');
+      });
+
+      it('renames a switch published under the derived name, keeping its subtype', async () => {
+        // The switch already exists from a run before the name was set; it must
+        // be renamed in place rather than published a second time.
+        const cached = new FakeAccessory();
+        await build({ status: { comode: 'Off' }, accessory: cached, settings: { convenienceModes: ['Quiet'] } });
+
+        const { accessory } = await build({
+          status: { comode: 'Off' },
+          accessory: cached,
+          settings: { convenienceModes: [{ value: 'Quiet', name: 'Silence' }] },
+        });
+
+        expect(switches(accessory).map((service) => service.subtype)).toEqual(['comode-quiet']);
+      });
+
+      it('names a mode switch the same way', async () => {
+        const { accessory } = await build({
+          settings: { modeSwitches: [{ value: 'Wind', name: 'Ventilation' }] },
+        });
+
+        expect(switches(accessory)
+          .map((service) => service.findCharacteristic(Characteristic.ConfiguredName)?.value))
+          .toEqual(['Ventilation']);
+      });
+
+      it('beats the tidied-up label the plugin would otherwise pick', async () => {
+        // Wind reads as 'Fan Only' by default; an explicit name outranks it.
+        const { accessory } = await build({
+          settings: { modeSwitches: [{ value: 'Wind', name: 'Ventilation' }] },
+        });
+
+        expect(switches(accessory)
+          .map((service) => service.findCharacteristic(Characteristic.ConfiguredName)?.value))
+          .not.toContain('Test AC Fan Only');
+      });
+
+      it('leaves an unnamed entry on the derived name, so two units stay apart', async () => {
+        const { accessory } = await build({
+          status: { comode: 'Off' },
+          settings: { convenienceModes: [{ value: 'Quiet', name: 'Silence' }, 'Comfort'] },
+        });
+
+        expect(switches(accessory)
+          .map((service) => service.findCharacteristic(Characteristic.ConfiguredName)?.value))
+          .toEqual(['Silence', 'Test AC Comfort']);
+      });
     });
 
     it('gives each switch a name of its own, which is what the Home app reads', async () => {
