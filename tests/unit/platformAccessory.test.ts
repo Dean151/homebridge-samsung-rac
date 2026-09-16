@@ -491,6 +491,93 @@ describe('SamsungRacAccessory', () => {
       expect(accessory.getService(Service.TemperatureSensor)).toBeDefined();
     });
 
+    describe('hidden while the unit is off', () => {
+      const hidden = { hideOutdoorTemperatureWhenOff: true };
+
+      it('reports No Response instead of a reading the sensor never took', async () => {
+        const { accessory } = await build({
+          status: { outdoorTemperature: 21.7, active: false },
+          settings: hidden,
+        });
+
+        expect(() => accessory.getService(Service.TemperatureSensor)
+          ?.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.())
+          .toThrow(FakeHapStatusError);
+      });
+
+      it('still publishes the sensor, so a unit off at startup keeps its tile', async () => {
+        const { accessory } = await build({
+          status: { outdoorTemperature: 21.7, active: false },
+          settings: hidden,
+        });
+
+        expect(accessory.getService(Service.TemperatureSensor)).toBeDefined();
+      });
+
+      it('reports normally while the unit is running', async () => {
+        const { accessory } = await build({
+          status: { outdoorTemperature: 21.7, active: true },
+          settings: hidden,
+        });
+
+        expect(accessory.getService(Service.TemperatureSensor)
+          ?.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.())
+          .toBe(21.7);
+      });
+
+      it('pushes the error the moment the unit is switched off', async () => {
+        // Without the push the Home app keeps the last figure on screen until
+        // something asks for it again.
+        const { accessory, adapter, setStatus } = await build({
+          status: { outdoorTemperature: 21.7 },
+          settings: hidden,
+        });
+
+        setStatus({ active: false, outdoorTemperature: 24.9 });
+        await pollOnce(adapter.getStatus);
+
+        expect(accessory.getService(Service.TemperatureSensor)
+          ?.findCharacteristic(Characteristic.CurrentTemperature)?.value)
+          .toBeInstanceOf(FakeHapStatusError);
+      });
+
+      it('comes back live when the unit starts again', async () => {
+        const { accessory, adapter, setStatus } = await build({
+          status: { outdoorTemperature: 21.7, active: false },
+          settings: hidden,
+        });
+
+        setStatus({ active: true, outdoorTemperature: 18.3 });
+        await pollOnce(adapter.getStatus);
+
+        expect(accessory.getService(Service.TemperatureSensor)
+          ?.findCharacteristic(Characteristic.CurrentTemperature)?.value)
+          .toBe(18.3);
+      });
+
+      it('leaves the reading alone when the option is off', async () => {
+        const { accessory } = await build({
+          status: { outdoorTemperature: 21.7, active: false },
+        });
+
+        expect(accessory.getService(Service.TemperatureSensor)
+          ?.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.())
+          .toBe(21.7);
+      });
+
+      it('leaves the indoor reading reporting, off or not', async () => {
+        // Only the outdoor sensor is withheld: a "No Response" on the
+        // heater-cooler's own temperature would take the whole tile with it,
+        // and with it any way to switch the unit back on.
+        const { heaterCooler } = await build({
+          status: { currentTemperature: 23, outdoorTemperature: 21.7, active: false },
+          settings: hidden,
+        });
+
+        expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(23);
+      });
+    });
+
     describe('on an accessory of its own', () => {
       it('puts the sensor there rather than on the air conditioner', async () => {
         const { accessory, outdoor, publish } = await build({

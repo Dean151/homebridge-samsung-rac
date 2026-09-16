@@ -94,6 +94,16 @@ the same document, with only the former labelled. Fahrenheit is the default for
 that reason. If the tile reads far too cold, set `outdoorTemperatureUnit` to
 `celsius`.
 
+Some units keep publishing an outdoor figure with the compressor stopped, and it
+is not one the sensor took — it drifts towards the room's temperature instead.
+`hideOutdoorTemperatureWhenOff: true` makes the tile read "No Response" while the
+unit is off rather than show a number nothing measured; it goes live again the
+moment the unit starts. Off by default, since a unit that reads correctly when
+idle should keep reporting and nothing it publishes says which kind yours is.
+Only the outdoor tile is affected — the air conditioner's own room temperature
+keeps reporting either way, or the whole tile would go unresponsive and take the
+means of switching the unit back on with it.
+
 A service only appears once the unit has actually published a reading for it, and
 is never withdrawn afterwards — some units publish nothing until they are running.
 
@@ -250,7 +260,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
   "convenienceModes": ["Quiet"],
   "modeSwitches": ["Dry"],
   "outdoorTemperature": "linked",
-  "outdoorTemperatureUnit": "fahrenheit"
+  "outdoorTemperatureUnit": "fahrenheit",
+  "hideOutdoorTemperatureWhenOff": false
 }
 ```
 
@@ -266,6 +277,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind`, the two HomeKit's air conditioner tile cannot express. |
 | `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
+| `hideOutdoorTemperatureWhenOff` | `false` | Stop reporting the outdoor tile while the unit is off, for units whose reading is only trustworthy when running. |
 | `requestTimeout` | `5` | Seconds. |
 | `certificateUrl` | community URL | Only if you mirror the certificate yourself. |
 

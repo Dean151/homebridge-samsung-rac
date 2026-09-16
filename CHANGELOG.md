@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `hideOutdoorTemperatureWhenOff`, off by default: some units keep publishing an
+  outdoor figure with the compressor stopped, and it is not one the sensor took
+  — it drifts towards the room's temperature. With this on, the outdoor tile
+  reads "No Response" while the unit is off instead of showing a number nothing
+  measured, and goes live again the moment it starts. It stays off by default
+  because a unit that reads correctly when idle should keep reporting, and
+  nothing a unit publishes says which kind it is. The air conditioner's own room
+  temperature is deliberately left alone: a "No Response" there would take the
+  whole tile with it, and with it any way to switch the unit back on.
+
 ### Fixed
 
 - Switching one convenience mode on left the previous one reading on for the

@@ -423,6 +423,18 @@ export class SamsungRacAccessory {
     return Number.isFinite(this.status.outdoorTemperature);
   }
 
+  /**
+   * Whether the outdoor reading is one the user has asked us to withhold — they
+   * have set `hideOutdoorTemperatureWhenOff` and the unit is off.
+   *
+   * Deliberately not folded into hasOutdoorReading: that one decides whether the
+   * sensor gets published at all, and a unit that happens to be off when
+   * Homebridge starts must not lose its tile. This only silences the value.
+   */
+  private outdoorReadingSuppressed(): boolean {
+    return this.platform.settings.hideOutdoorTemperatureWhenOff && !this.status.active;
+  }
+
   /** The accessory the outdoor sensor belongs on, per the user's setting. */
   private outdoorHost(): PlatformAccessory {
     return this.outdoor?.accessory ?? this.accessory;
@@ -481,7 +493,8 @@ export class SamsungRacAccessory {
 
     this.platform.log.info(
       `${this.accessory.displayName}: outdoor temperature available `
-      + `(${this.status.outdoorTemperature}°C)${this.outdoor ? ', as an accessory of its own' : ''}.`,
+      + `(${this.status.outdoorTemperature}°C)${this.outdoor ? ', as an accessory of its own' : ''}`
+      + `${this.platform.settings.hideOutdoorTemperatureWhenOff ? ', hidden while the unit is off' : ''}.`,
     );
   }
 
@@ -812,10 +825,13 @@ export class SamsungRacAccessory {
     this.assertResponsive();
 
     const value = this.status.outdoorTemperature;
-    if (!Number.isFinite(value)) {
+    if (!Number.isFinite(value) || this.outdoorReadingSuppressed()) {
       // The service is only published once a reading exists, so losing one means
       // the unit stopped reporting it. "No Response" beats inventing a value —
-      // and the service is never withdrawn, in case it comes back.
+      // and the service is never withdrawn, in case it comes back. A reading
+      // the user has told us not to trust with the unit off is treated the same
+      // way: there is no "unknown" to report in HomeKit, so the tile goes
+      // unresponsive rather than showing a figure nothing measured.
       throw new this.platform.api.hap.HapStatusError(
         this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE,
       );
@@ -1082,8 +1098,20 @@ export class SamsungRacAccessory {
 
       const outdoor = this.outdoorService();
       if (outdoor && this.hasOutdoorReading()) {
-        outdoor.updateCharacteristic(
-          this.platform.Characteristic.CurrentTemperature, this.status.outdoorTemperature as number);
+        // Pushing the error is what moves the tile to "No Response" without
+        // waiting for HomeKit to ask; a plain value would leave the stale one
+        // on screen until it did. Separate calls rather than one with a union:
+        // updateCharacteristic overloads a value and an error, not both at once.
+        if (this.outdoorReadingSuppressed()) {
+          outdoor.updateCharacteristic(
+            this.platform.Characteristic.CurrentTemperature,
+            new this.platform.api.hap.HapStatusError(
+              this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE),
+          );
+        } else {
+          outdoor.updateCharacteristic(
+            this.platform.Characteristic.CurrentTemperature, this.status.outdoorTemperature as number);
+        }
       }
 
       // Every switch in a group reads the same field, so one change moves all

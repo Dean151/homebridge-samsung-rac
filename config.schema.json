@@ -105,6 +105,13 @@
         "condition": { "functionBody": "return model.outdoorTemperature !== 'off';" },
         "description": "The scale the unit reports its outdoor sensor in. Stated nowhere in what the unit reports, and independent of the unit's own setting: a TP6X_RAC_16K reports itself in Celsius and this in Fahrenheit, measured against a known outdoor temperature. Fahrenheit is the default for that reason. If your tile reads far too cold, your unit reports Celsius here \u2014 switch it."
       },
+      "hideOutdoorTemperatureWhenOff": {
+        "title": "Hide the outdoor reading while the unit is off",
+        "type": "boolean",
+        "default": false,
+        "condition": { "functionBody": "return model.outdoorTemperature !== 'off';" },
+        "description": "Some units keep publishing an outdoor figure with the compressor stopped, and it is not one the sensor measured \u2014 it drifts towards the room's temperature instead. Turn this on if yours does: the tile then reads \"No Response\" while the unit is off rather than showing a number nothing measured, and goes live again the moment it starts. Leave it off if your outdoor reading is trustworthy when idle."
+      },
       "requestTimeout": {
         "title": "Request timeout (seconds)",
         "type": "integer",
@@ -131,6 +138,7 @@
     "modeSwitches",
     "outdoorTemperature",
     "outdoorTemperatureUnit",
+    "hideOutdoorTemperatureWhenOff",
     {
       "type": "fieldset",
       "title": "Advanced",

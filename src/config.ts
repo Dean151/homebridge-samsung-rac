@@ -42,6 +42,14 @@ export interface NormalisedConfig {
    */
   outdoorTemperatureUnit: 'C' | 'F' | null;
   /**
+   * Whether to stop reporting the outdoor reading while the unit is off. Some
+   * units keep publishing a figure with the compressor stopped, and it is not
+   * one the sensor measured — on the reference unit it drifts towards the
+   * indoor temperature. Off by default: a unit that reads correctly when idle
+   * should keep reporting, and this is not detectable from what it publishes.
+   */
+  hideOutdoorTemperatureWhenOff: boolean;
+  /**
    * Which `Comode` values get a switch in HomeKit — the convenience modes,
    * where WindFree lives. Empty by default, and deliberately so: the unit
    * publishes the value it holds but never the ones it would accept, so any
@@ -200,6 +208,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     outdoorTemperatureUnit: placement === null
       ? null
       : toOutdoorUnit(config.outdoorTemperatureUnit, config.outdoorTemperature, log),
+    hideOutdoorTemperatureWhenOff: toBoolean(config.hideOutdoorTemperatureWhenOff, 'hideOutdoorTemperatureWhenOff', log),
     convenienceModes: toNameList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toNameList(config.modeSwitches, 'modeSwitches', log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
@@ -249,6 +258,30 @@ function toNameList(value: unknown, key: string, log: Logging): string[] {
   }
 
   return names;
+}
+
+/**
+ * A plain opt-in flag: absent means off. A hand-written config.json may say
+ * `"true"` rather than `true`, so both are read.
+ */
+function toBoolean(value: unknown, key: string, log: Logging): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  const raw = text(value);
+  if (raw === 'true' || raw === 'on' || raw === 'yes') {
+    return true;
+  }
+  if (raw === 'false' || raw === 'off' || raw === 'no' || raw === '') {
+    return false;
+  }
+
+  log.warn(`Ignoring an unrecognised ${key} setting '${value}'; leaving it off.`);
+  return false;
 }
 
 function toNumber(value: unknown, fallback: number): number {

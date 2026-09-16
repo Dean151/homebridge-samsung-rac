@@ -17,6 +17,7 @@ describe('normaliseConfig', () => {
       swingDirection: DEFAULT_SWING_DIRECTION,
       outdoorTemperaturePlacement: DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT,
       outdoorTemperatureUnit: DEFAULT_OUTDOOR_TEMPERATURE_UNIT,
+      hideOutdoorTemperatureWhenOff: false,
     });
   });
 
@@ -43,6 +44,35 @@ describe('normaliseConfig', () => {
     it('falls back to the default rather than silently dropping the sensor', () => {
       const log = logger();
       expect(placementFor('sideways', log)).toBe(DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT);
+      expect(log.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe('hiding the outdoor reading while the unit is off', () => {
+    const hideFor = (hideOutdoorTemperatureWhenOff: unknown, log = logger()) =>
+      normaliseConfig({ platform: 'x', hideOutdoorTemperatureWhenOff } as never, log as never)
+        .hideOutdoorTemperatureWhenOff;
+
+    it('stays off unless asked for: a unit that reads correctly when idle should keep reporting', () => {
+      expect(hideFor(undefined)).toBe(false);
+      expect(hideFor(null)).toBe(false);
+    });
+
+    it('turns on when asked', () => {
+      expect(hideFor(true)).toBe(true);
+    });
+
+    // A hand-written config.json is likelier to quote it than a form is.
+    it('reads the string a hand-written config would use', () => {
+      expect(hideFor('true')).toBe(true);
+      expect(hideFor(' Yes ')).toBe(true);
+      expect(hideFor('false')).toBe(false);
+      expect(hideFor('no')).toBe(false);
+    });
+
+    it('leaves it off and says so when the value makes no sense', () => {
+      const log = logger();
+      expect(hideFor('sometimes', log)).toBe(false);
       expect(log.warn).toHaveBeenCalled();
     });
   });
