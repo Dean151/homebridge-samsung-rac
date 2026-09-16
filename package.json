@@ -32,7 +32,8 @@
     "homebridge-ui/public",
     "homebridge-ui/server.js",
     "config.schema.json",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "rimraf dist && tsc -p tsconfig.json",

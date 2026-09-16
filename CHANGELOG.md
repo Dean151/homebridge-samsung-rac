@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The Homebridge UI's changelog view read "Could not retrieve changelog, perhaps
+  this plugin does not provide a CHANGELOG.md file." It reads the file straight
+  off disk, from the installed plugin's own directory — and `files` in
+  package.json named README.md but not this file, so it was never in the
+  published package to be read. npm adds package.json, the README and the
+  licence to a package on its own, but not a changelog.
+
 ## [0.4.0] - 2026-09-16
 
 ### Added
