@@ -1,7 +1,7 @@
 {
   "displayName": "Homebridge Samsung RAC",
   "name": "homebridge-samsung-rac",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Local-network HomeKit control for Samsung room air conditioners: no SmartThings account and no cloud, with direct vane/swing control.",
   "license": "Apache-2.0",
   "author": "Thomas Durand",
