@@ -104,6 +104,17 @@ Only the outdoor tile is affected — the air conditioner's own room temperature
 keeps reporting either way, or the whole tile would go unresponsive and take the
 means of switching the unit back on with it.
 
+The room temperature on the air conditioner itself can be unreliable the same way
+— some units report it oddly with the fan stopped.
+`freezeIndoorTemperatureWhenOff: true` holds the tile at the last temperature
+read while the unit was running, until it starts again; the held value is kept
+with the cached accessory, so restarting Homebridge while the unit is off does
+not lose it. This one holds a reading rather than reading "No Response" because
+HomeKit requires a room temperature on the air conditioner: an error there greys
+out the whole tile, and with it the switch you would use to turn the unit back
+on. The two settings are independent — a unit can be wrong about one sensor and
+right about the other.
+
 A service only appears once the unit has actually published a reading for it, and
 is never withdrawn afterwards — some units publish nothing until they are running.
 
@@ -261,7 +272,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
   "modeSwitches": ["Dry"],
   "outdoorTemperature": "linked",
   "outdoorTemperatureUnit": "fahrenheit",
-  "hideOutdoorTemperatureWhenOff": false
+  "hideOutdoorTemperatureWhenOff": false,
+  "freezeIndoorTemperatureWhenOff": false
 }
 ```
 
@@ -278,6 +290,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
 | `hideOutdoorTemperatureWhenOff` | `false` | Stop reporting the outdoor tile while the unit is off, for units whose reading is only trustworthy when running. |
+| `freezeIndoorTemperatureWhenOff` | `false` | Hold the room temperature at its last running value while the unit is off, for units whose reading is only trustworthy when running. |
 | `requestTimeout` | `5` | Seconds. |
 | `certificateUrl` | community URL | Only if you mirror the certificate yourself. |
 

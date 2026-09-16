@@ -712,11 +712,48 @@ export class SamsungRacAccessory {
 
   /** A measurement, not a setpoint: clamp to HomeKit's own bounds only. */
   private currentTemperature(): number {
-    const value = this.status.currentTemperature;
+    const frozen = this.platform.settings.freezeIndoorTemperatureWhenOff && !this.status.active
+      ? this.rememberedIndoorTemperature()
+      : undefined;
+    // Falling back to the live reading matters on a Homebridge started with the
+    // unit already off and nothing remembered yet: a doubtful figure still beats
+    // the minimum of the range, which is what an unusable value reports as.
+    const value = frozen ?? this.status.currentTemperature;
+
     if (!Number.isFinite(value)) {
       return this.minTemp;
     }
     return Math.max(-270, Math.min(100, value));
+  }
+
+  /**
+   * The last room temperature read while the unit was running, or undefined if
+   * it has not run since this accessory was first seen.
+   *
+   * Kept in the accessory context, which Homebridge persists with the cached
+   * accessory: restarting while the unit is off would otherwise drop the frozen
+   * value and fall straight back to the reading the user asked us not to trust.
+   */
+  private rememberedIndoorTemperature(): number | undefined {
+    const context = this.accessory.context as { lastRunningIndoorTemperature?: number };
+    const value = context.lastRunningIndoorTemperature;
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  /**
+   * Recorded on every poll regardless of the setting, so turning it on has
+   * something to freeze at straight away rather than after the next run.
+   */
+  private rememberIndoorTemperature(): void {
+    if (!this.status.active) {
+      return;
+    }
+    const value = this.status.currentTemperature;
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    (this.accessory.context as { lastRunningIndoorTemperature?: number })
+      .lastRunningIndoorTemperature = value;
   }
 
   private getCoolingThreshold(): CharacteristicValue {
@@ -1068,6 +1105,9 @@ export class SamsungRacAccessory {
    */
   private push(): void {
     this.rememberPlainMode();
+    // Before anything reads currentTemperature() below: while the unit runs,
+    // what is remembered is what gets pushed.
+    this.rememberIndoorTemperature();
 
     if (!this.responsive) {
       return;

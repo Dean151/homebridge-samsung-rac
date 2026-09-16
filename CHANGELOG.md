@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   temperature is deliberately left alone: a "No Response" there would take the
   whole tile with it, and with it any way to switch the unit back on.
 
+- `freezeIndoorTemperatureWhenOff`, off by default: the same unreliability on
+  the unit's own room sensor, which some units report oddly with the fan
+  stopped. The air conditioner tile then holds the last temperature read while
+  the unit was running until it starts again. It holds a reading rather than
+  reading "No Response" like the outdoor sensor because HomeKit requires a room
+  temperature on a HeaterCooler — an error there greys out the whole tile, and
+  with it the switch that turns the unit back on. The held value lives in the
+  cached accessory, so a Homebridge restarted while the unit is off keeps it.
+
 ### Fixed
 
 - Switching one convenience mode on left the previous one reading on for the

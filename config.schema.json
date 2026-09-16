@@ -112,6 +112,12 @@
         "condition": { "functionBody": "return model.outdoorTemperature !== 'off';" },
         "description": "Some units keep publishing an outdoor figure with the compressor stopped, and it is not one the sensor measured \u2014 it drifts towards the room's temperature instead. Turn this on if yours does: the tile then reads \"No Response\" while the unit is off rather than showing a number nothing measured, and goes live again the moment it starts. Leave it off if your outdoor reading is trustworthy when idle."
       },
+      "freezeIndoorTemperatureWhenOff": {
+        "title": "Hold the room temperature while the unit is off",
+        "type": "boolean",
+        "default": false,
+        "description": "Some units report an unreliable room temperature with the fan stopped. Turn this on if yours does: the air conditioner tile then keeps showing the last temperature read while it was running, until it starts again. Unlike the outdoor sensor this one cannot read \"No Response\" \u2014 HomeKit requires a room temperature on the air conditioner, and an error there would grey out the whole tile and leave you no way to switch the unit back on \u2014 so it holds the last good reading instead."
+      },
       "requestTimeout": {
         "title": "Request timeout (seconds)",
         "type": "integer",
@@ -139,6 +145,7 @@
     "outdoorTemperature",
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
+    "freezeIndoorTemperatureWhenOff",
     {
       "type": "fieldset",
       "title": "Advanced",

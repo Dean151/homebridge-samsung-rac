@@ -50,6 +50,15 @@ export interface NormalisedConfig {
    */
   hideOutdoorTemperatureWhenOff: boolean;
   /**
+   * Whether to hold the room temperature at its last running value while the
+   * unit is off, rather than report what the unit publishes with the fan
+   * stopped. Same unreliability as the outdoor sensor, but this one cannot be
+   * answered with "No Response": CurrentTemperature is required on
+   * HeaterCooler, so an error there takes the whole tile — and the means of
+   * switching the unit back on — with it. Off by default.
+   */
+  freezeIndoorTemperatureWhenOff: boolean;
+  /**
    * Which `Comode` values get a switch in HomeKit — the convenience modes,
    * where WindFree lives. Empty by default, and deliberately so: the unit
    * publishes the value it holds but never the ones it would accept, so any
@@ -209,6 +218,8 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       ? null
       : toOutdoorUnit(config.outdoorTemperatureUnit, config.outdoorTemperature, log),
     hideOutdoorTemperatureWhenOff: toBoolean(config.hideOutdoorTemperatureWhenOff, 'hideOutdoorTemperatureWhenOff', log),
+    freezeIndoorTemperatureWhenOff: toBoolean(
+      config.freezeIndoorTemperatureWhenOff, 'freezeIndoorTemperatureWhenOff', log),
     convenienceModes: toNameList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toNameList(config.modeSwitches, 'modeSwitches', log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()

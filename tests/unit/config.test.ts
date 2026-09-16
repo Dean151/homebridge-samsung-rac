@@ -18,6 +18,7 @@ describe('normaliseConfig', () => {
       outdoorTemperaturePlacement: DEFAULT_OUTDOOR_TEMPERATURE_PLACEMENT,
       outdoorTemperatureUnit: DEFAULT_OUTDOOR_TEMPERATURE_UNIT,
       hideOutdoorTemperatureWhenOff: false,
+      freezeIndoorTemperatureWhenOff: false,
     });
   });
 
@@ -73,6 +74,36 @@ describe('normaliseConfig', () => {
     it('leaves it off and says so when the value makes no sense', () => {
       const log = logger();
       expect(hideFor('sometimes', log)).toBe(false);
+      expect(log.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe('freezing the room temperature while the unit is off', () => {
+    const freezeFor = (freezeIndoorTemperatureWhenOff: unknown, log = logger()) =>
+      normaliseConfig({ platform: 'x', freezeIndoorTemperatureWhenOff } as never, log as never)
+        .freezeIndoorTemperatureWhenOff;
+
+    it('stays off unless asked for', () => {
+      expect(freezeFor(undefined)).toBe(false);
+    });
+
+    it('turns on when asked, however the config spells it', () => {
+      expect(freezeFor(true)).toBe(true);
+      expect(freezeFor('true')).toBe(true);
+      expect(freezeFor('no')).toBe(false);
+    });
+
+    it('is independent of the outdoor setting: a unit can be wrong about one and not the other', () => {
+      const settings = normaliseConfig(
+        { platform: 'x', hideOutdoorTemperatureWhenOff: true } as never, logger() as never,
+      );
+      expect(settings.hideOutdoorTemperatureWhenOff).toBe(true);
+      expect(settings.freezeIndoorTemperatureWhenOff).toBe(false);
+    });
+
+    it('leaves it off and says so when the value makes no sense', () => {
+      const log = logger();
+      expect(freezeFor('sometimes', log)).toBe(false);
       expect(log.warn).toHaveBeenCalled();
     });
   });

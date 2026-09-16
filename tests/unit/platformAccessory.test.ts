@@ -195,6 +195,115 @@ describe('SamsungRacAccessory', () => {
     });
   });
 
+  describe('the room temperature frozen while the unit is off', () => {
+    const frozen = { freezeIndoorTemperatureWhenOff: true };
+
+    it('holds the last reading taken while the unit was running', async () => {
+      const { heaterCooler, adapter, setStatus } = await build({
+        status: { currentTemperature: 23 },
+        settings: frozen,
+      });
+
+      setStatus({ active: false, currentTemperature: 31 });
+      await pollOnce(adapter.getStatus);
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(23);
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.value).toBe(23);
+    });
+
+    it('goes live again the moment the unit starts', async () => {
+      const { heaterCooler, adapter, setStatus } = await build({
+        status: { currentTemperature: 23 },
+        settings: frozen,
+      });
+
+      setStatus({ active: false, currentTemperature: 31 });
+      await pollOnce(adapter.getStatus);
+      setStatus({ active: true, currentTemperature: 24.5 });
+      await pollOnce(adapter.getStatus);
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(24.5);
+    });
+
+    it('freezes at the newest running reading, not the first one seen', async () => {
+      const { heaterCooler, adapter, setStatus } = await build({
+        status: { currentTemperature: 23 },
+        settings: frozen,
+      });
+
+      setStatus({ currentTemperature: 21 });
+      await pollOnce(adapter.getStatus);
+      setStatus({ active: false, currentTemperature: 31 });
+      await pollOnce(adapter.getStatus);
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(21);
+    });
+
+    it('survives a restart, so a Homebridge restarted while off keeps the held value', async () => {
+      // The same cached accessory a restart hands back, context and all.
+      const cached = new FakeAccessory();
+      const first = await build({ status: { currentTemperature: 23 }, accessory: cached, settings: frozen });
+      first.setStatus({ active: false, currentTemperature: 31 });
+      await pollOnce(first.adapter.getStatus);
+
+      const { heaterCooler } = await build({
+        status: { active: false, currentTemperature: 31 },
+        accessory: cached,
+        settings: frozen,
+      });
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(23);
+    });
+
+    it('reports the live reading when the unit has never run, doubtful beating unusable', async () => {
+      // Nothing remembered yet: the alternative is the bottom of the setpoint
+      // range, which is what an unusable reading reports as.
+      const { heaterCooler } = await build({
+        status: { active: false, currentTemperature: 31 },
+        settings: frozen,
+      });
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(31);
+    });
+
+    it('remembers even with the option off, so turning it on freezes straight away', async () => {
+      const cached = new FakeAccessory();
+      const running = await build({ status: { currentTemperature: 23 }, accessory: cached });
+      running.setStatus({ active: false, currentTemperature: 31 });
+      await pollOnce(running.adapter.getStatus);
+
+      const { heaterCooler } = await build({
+        status: { active: false, currentTemperature: 31 },
+        accessory: cached,
+        settings: frozen,
+      });
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(23);
+    });
+
+    it('leaves the reading alone when the option is off', async () => {
+      const { heaterCooler, adapter, setStatus } = await build({ status: { currentTemperature: 23 } });
+
+      setStatus({ active: false, currentTemperature: 31 });
+      await pollOnce(adapter.getStatus);
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentTemperature)?.getHandler?.()).toBe(31);
+    });
+
+    it('still reports Inactive rather than a state inferred from the held reading', async () => {
+      const { heaterCooler, adapter, setStatus } = await build({
+        status: { mode: 'Auto', currentTemperature: 23, targetTemperature: 18 },
+        settings: frozen,
+      });
+
+      setStatus({ active: false });
+      await pollOnce(adapter.getStatus);
+
+      expect(heaterCooler.findCharacteristic(Characteristic.CurrentHeaterCoolerState)?.getHandler?.())
+        .toBe(Characteristic.CurrentHeaterCoolerState.INACTIVE);
+    });
+  });
+
   describe('modes', () => {
     it('does not offer HEAT on a unit that cannot heat', async () => {
       const { heaterCooler } = await build();
