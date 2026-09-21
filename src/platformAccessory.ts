@@ -542,7 +542,11 @@ export class SamsungRacAccessory {
         label: labelFor(entry),
         displayName: this.switchDisplayName(entry),
         available: (status) => typeof status.comode === 'string' && status.comode.length > 0,
-        isOn: (status) => status.comode?.toLowerCase() === name.toLowerCase(),
+        // A unit that is off still reports the convenience mode it will resume
+        // with, which is a setting rather than something running: a tile left
+        // reading on would be claiming the room is being kept WindFree while
+        // nothing is blowing.
+        isOn: (status) => status.active && status.comode?.toLowerCase() === name.toLowerCase(),
         // Off is the one value every unit that has the field agrees on: it is
         // what it reports when nothing is running.
         write: (on) => () => this.adapter.setComode(on ? name : comodeOff),

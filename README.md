@@ -57,7 +57,9 @@ the counter is still done in the Samsung app; the plugin has no way to write it.
 **Convenience modes** — the family WindFree belongs to — are switches too, via
 `convenienceModes`. The unit keeps one convenience mode at a time, so the
 switches behave as one group: turning Quiet on turns Comfort off, including when
-the change was made on the remote.
+the change was made on the remote. They all read off while the air conditioner
+is off: the unit goes on reporting the mode it will resume with, but that is a
+setting rather than something running.
 
 Neither list has a default, on purpose. The unit reports the mode it is *in* but
 never the ones it would accept, so there is nothing to detect from, and a switch

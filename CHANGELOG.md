@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A convenience mode switch read on while the air conditioner was off. The unit
+  keeps reporting the `Comode` it will resume with once it is running again, so
+  the WindFree tile stayed lit with nothing blowing. Those switches now read off
+  whenever the unit is off, and turning one off there sends nothing — it is
+  already off.
+
 - The Homebridge UI's changelog view read "Could not retrieve changelog, perhaps
   this plugin does not provide a CHANGELOG.md file." It reads the file straight
   off disk, from the installed plugin's own directory — and `files` in

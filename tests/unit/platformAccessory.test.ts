@@ -966,6 +966,34 @@ describe('SamsungRacAccessory', () => {
       expect(on(accessory.getServiceById(Service.Switch, 'comode-comfort'))?.getHandler?.()).toBe(false);
     });
 
+    it('reads off while the unit is off, whatever mode it is holding', async () => {
+      const { accessory, adapter, setStatus } = await build({
+        status: { comode: 'Quiet' },
+        settings: convenience,
+      });
+      const quiet = on(accessory.getServiceById(Service.Switch, 'comode-quiet'));
+      expect(quiet?.getHandler?.()).toBe(true);
+
+      setStatus({ active: false });
+      await pollOnce(adapter.getStatus);
+
+      expect(quiet?.value).toBe(false);
+      expect(quiet?.getHandler?.()).toBe(false);
+    });
+
+    it('sends nothing when a switch is turned off while the unit is off', async () => {
+      const { accessory, adapter } = await build({
+        status: { comode: 'Quiet', active: false },
+        settings: convenience,
+      });
+
+      // It already reads off, so turning it off is the no-op case: the mode the
+      // unit will resume with is none of HomeKit's business here.
+      await on(accessory.getServiceById(Service.Switch, 'comode-quiet'))?.setHandler?.(false);
+
+      expect(adapter.setComode).not.toHaveBeenCalled();
+    });
+
     it('writes the mode when switched on, and Off when switched off', async () => {
       const { accessory, adapter, setStatus } = await build({
         status: { comode: 'Off' },
