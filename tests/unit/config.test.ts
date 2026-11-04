@@ -29,6 +29,14 @@ describe('normaliseConfig', () => {
     expect(settings.devices[1].deviceUuid).toBeUndefined();
   });
 
+  it('enables one shared multisplit sensor and optional device controls explicitly', () => {
+    const config = normaliseConfig({ platform: 'x', outdoorTemperature: 'shared', outdoorTemperatureUnit: 'fahrenheit',
+      sharedOutdoorName: 'Outside', detailedSwing: true, spiSwitch: true } as never, logger() as never);
+    expect(config).toMatchObject({ outdoorTemperaturePlacement: 'shared', outdoorTemperatureUnit: 'F',
+      sharedOutdoorName: 'Outside', detailedSwing: true, spiSwitch: true });
+    expect(normaliseConfig({ platform: 'x' }, logger() as never)).toMatchObject({ detailedSwing: false, spiSwitch: false });
+  });
+
   it('fills in the defaults', () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

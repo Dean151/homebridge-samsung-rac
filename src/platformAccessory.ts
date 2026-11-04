@@ -33,7 +33,7 @@ const switchLabels: Record<string, string> = {
 };
 
 /** Subtype prefixes for the switches this plugin owns, so it only removes its own. */
-const switchSubtypes = { comode: 'comode-', mode: 'mode-', autoClean: 'setting-autoclean' } as const;
+const switchSubtypes = { comode: 'comode-', mode: 'mode-', autoClean: 'setting-autoclean', spi: 'setting-spi', swing: 'swing-' } as const;
 
 /**
  * What to call a switch in the log, and the tail of its HomeKit name when the
@@ -56,7 +56,7 @@ interface ModeSwitch {
   /** Stable, and the HomeKit subtype: it is what carries the user's automations. */
   subtype: string;
   /** Which field this switch is backed by, and so which switches it excludes. */
-  group: 'comode' | 'mode' | 'autoclean';
+  group: 'comode' | 'mode' | 'autoclean' | 'spi' | 'swing-vertical' | 'swing-horizontal';
   /** Short, for the log. */
   label: string;
   /** What the Home app shows, unless the user has since renamed it there. */
@@ -535,6 +535,9 @@ export class SamsungRacAccessory {
   }
 
   private hasOutdoorReading(): boolean {
+    if (this.platform.settings.outdoorTemperaturePlacement === 'shared') {
+      return false;
+    }
     return Number.isFinite(this.status.outdoorTemperature);
   }
 
@@ -595,6 +598,7 @@ export class SamsungRacAccessory {
     const service = existing ?? host.addService(this.platform.Service.TemperatureSensor);
     this.nameService(host, service, 'outdoor', `${this.accessory.displayName} Outdoor`);
     service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+      .setProps({ minValue: -100, maxValue: 100, minStep: 0.1 })
       .onGet(this.getOutdoorTemperature.bind(this));
 
     // Deliberately NOT linked to the HeaterCooler, unlike the filter. A linked
@@ -637,6 +641,33 @@ export class SamsungRacAccessory {
 
   private modeSwitchSpecs(): ModeSwitch[] {
     const specs: ModeSwitch[] = [];
+
+    if (this.platform.settings.spiSwitch) {
+      specs.push({
+        subtype: switchSubtypes.spi,
+        group: 'spi',
+        label: 'SPI',
+        displayName: `${this.accessory.displayName} SPI`,
+        available: status => ['On', 'Off'].includes(status.options.Spi),
+        isOn: status => status.options.Spi === 'On',
+        write: on => () => this.adapter.setSpi(on),
+      });
+    }
+    if (this.platform.settings.detailedSwing) {
+      for (const axis of ['vertical', 'horizontal'] as const) {
+        const label = axis === 'vertical' ? 'Swing Up Down' : 'Swing Left Right';
+        specs.push({
+          subtype: `${switchSubtypes.swing}${axis}`,
+          group: `swing-${axis}`,
+          label,
+          displayName: `${this.accessory.displayName} ${label}`,
+          available: status => ['Fix', 'Up_And_Low', 'Left_And_Right', 'All'].includes(status.windDirection ?? ''),
+          isOn: status => status.windDirection === 'All'
+            || status.windDirection === (axis === 'vertical' ? 'Up_And_Low' : 'Left_And_Right'),
+          write: on => () => this.adapter.setSwingAxis(axis, on),
+        });
+      }
+    }
 
     if (this.platform.settings.autoCleanSwitch) {
       specs.push({
@@ -728,7 +759,8 @@ export class SamsungRacAccessory {
     for (const service of [...this.accessory.services]) {
       const subtype = service.subtype ?? '';
       const ours = subtype.startsWith(switchSubtypes.comode) || subtype.startsWith(switchSubtypes.mode)
-        || subtype === switchSubtypes.autoClean;
+        || subtype === switchSubtypes.autoClean || subtype === switchSubtypes.spi
+        || subtype.startsWith(switchSubtypes.swing);
       if (service.UUID === this.platform.Service.Switch.UUID && ours && !wanted.has(subtype)) {
         this.platform.log.info(`${this.accessory.displayName}: removing the switch for '${subtype}'.`);
         this.accessory.removeService(service);
@@ -1148,7 +1180,7 @@ export class SamsungRacAccessory {
       // the second and a half it takes to write and read back. If the unit then
       // refuses the change, the read-back puts them back where they were.
       this.excludeSiblings(spec);
-    } else if (!spec.isOn(this.status)) {
+    } else if (!spec.isOn(this.status) && !spec.group.startsWith('swing-')) {
       // Switching off something that is not on must not touch the unit. A
       // scene that turns every switch in the group off would otherwise send one
       // write per switch, and each of them would cancel the mode a later switch
@@ -1235,6 +1267,9 @@ export class SamsungRacAccessory {
 
   private markUnresponsive(reason: string): void {
     this.responsive = false;
+    if (this.platform.settings.outdoorTemperaturePlacement === 'shared') {
+      this.platform.reportOutdoorTemperature(this.accessory.UUID);
+    }
 
     if (this.loggedOffline) {
       this.platform.log.debug(`${this.accessory.displayName}: still not responding: ${reason}`);
@@ -1266,6 +1301,9 @@ export class SamsungRacAccessory {
       this.shutdownTimer?.cancel();
     }
     this.pushShutdownTimers();
+    if (this.platform.settings.outdoorTemperaturePlacement === 'shared') {
+      this.platform.reportOutdoorTemperature(this.accessory.UUID, this.status, this.adapter.lastSuccessfulReadAt);
+    }
 
     try {
       this.service.updateCharacteristic(this.platform.Characteristic.Active, this.activeValue());

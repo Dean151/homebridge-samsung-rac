@@ -40,7 +40,7 @@ export interface ModeSwitchConfig {
 }
 
 /** 'linked' hangs the sensor off the air conditioner; 'separate' gives it its own accessory. */
-export type OutdoorTemperaturePlacement = 'linked' | 'separate';
+export type OutdoorTemperaturePlacement = 'linked' | 'separate' | 'shared';
 
 export interface NormalisedConfig {
   devices: DeviceConfig[];
@@ -94,6 +94,9 @@ export interface NormalisedConfig {
   modeSwitches: ModeSwitchConfig[];
   /** Publish the persistent self-drying setting when the unit reports it. */
   autoCleanSwitch: boolean;
+  spiSwitch: boolean;
+  detailedSwing: boolean;
+  sharedOutdoorName: string;
   /** Optional local countdown switches; minutes, one countdown per AC. */
   shutdownTimers: number[];
   certificateUrl?: string;
@@ -125,6 +128,9 @@ function toOutdoorPlacement(value: unknown, log: Logging): OutdoorTemperaturePla
   }
   if (raw === 'off' || raw === 'none' || raw === 'false') {
     return null;
+  }
+  if (raw === 'shared') {
+    return 'shared';
   }
   if (raw === 'separate' || raw === 'accessory' || raw === 'device') {
     return 'separate';
@@ -261,6 +267,9 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
     autoCleanSwitch: toBoolean(config.autoCleanSwitch, 'autoCleanSwitch', log),
+    spiSwitch: toBoolean(config.spiSwitch, 'spiSwitch', log),
+    detailedSwing: toBoolean(config.detailedSwing, 'detailedSwing', log),
+    sharedOutdoorName: trimmed(config.sharedOutdoorName) || 'AC Outdoor Temperature',
     shutdownTimers: toShutdownTimers(config.shutdownTimers, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()

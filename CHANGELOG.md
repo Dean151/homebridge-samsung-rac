@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2-local.5] - 2026-11-04
+
+### Added
+
+- Independent Up Down and Left Right swing switches, preserving the other axis
+  even when HomeKit sends both changes together.
+- Optional SPI setting switch with local read-back confirmation.
+- One shared outdoor temperature accessory for a multisplit system, with source
+  fallback, reading expiry, stable identity and no additional network polling.
+- Subzero outdoor temperatures are exposed without HomeKit clipping them to zero.
+
+
 ## [0.4.2-local.4] - 2026-11-04
 
 ### Added

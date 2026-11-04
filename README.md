@@ -440,3 +440,54 @@ read-back on all three TP6X_RAC_17K units in Cool mode on 2026-11-04. This confi
 the setting, not a measured acoustic or cooling-performance change, and does not
 identify either preset as WindFree. Presets are mutually exclusive and can change
 fan settings as part of their intended operation.
+
+
+## Swing axes, SPI and one multisplit outdoor sensor
+
+The optional configuration below adds two swing switches and an SPI setting
+switch to each AC, plus **one** separate temperature accessory for the shared
+outdoor unit:
+
+```json
+{
+  "detailedSwing": true,
+  "spiSwitch": true,
+  "outdoorTemperature": "shared",
+  "outdoorTemperatureUnit": "fahrenheit",
+  "sharedOutdoorName": "AC Outdoor Temperature",
+  "hideOutdoorTemperatureWhenOff": false
+}
+```
+
+Only use `shared` when every AC in this platform belongs to the same outdoor unit.
+It does not infer shared hardware merely because temperatures happen to match.
+The accessory has a stable identity independent of source IPs and can be assigned
+to an outdoor room in Apple Home. Existing per-AC outdoor sensors are removed when
+all devices are reachable; AC identities and pairing are retained.
+
+**Swing:** Up Down and Left Right are independent switches. Both on sends `All`;
+both off sends `Fix`. Disabling one axis preserves the other. The main AC swing
+control still enables the configured `swingDirection` or disables both axes.
+These are oscillation controls, not fixed vane-angle selectors. Settings do not
+power the AC on; firmware may ignore changes while it is off. All four direction
+values were confirmed by read-back on three TP6X_RAC_17K units in fan-only mode.
+Other model families can accept fewer directions, so this remains opt-in.
+
+**SPI:** The switch reflects the Samsung `Spi_On` / `Spi_Off` setting, including
+its retained value while the AC is off. Both values were confirmed by local
+read-back on all three tested units. This verifies the setting, not the presence
+or output of ionizer hardware; no air-quality measurement is implied.
+
+**Outdoor temperature:** Existing AC polls feed one shared sensor. Prefer a fresh
+reading from a running indoor unit, otherwise use the first available source;
+never average duplicate readings. A source expires after 60 seconds (or three
+poll intervals if longer), using the last successful LAN read time rather than
+the time a cached response was returned. If every source expires, HomeKit reports
+No Response. Recovery reuses the same accessory. With `hideOutdoorTemperatureWhenOff`
+enabled, only running indoor units supply the sensor.
+
+The outdoor field has no unit label. Fahrenheit is documented for the related
+TP6X_RAC_16K; the tested 17K units all reported raw `65` (18.3°C when interpreted
+as Fahrenheit), both idle and running. This scale remains an explicit assumption
+until compared with an independent thermometer. A successful poll cannot prove
+that the outdoor hardware refreshed its sensor while idle.

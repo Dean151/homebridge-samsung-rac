@@ -83,6 +83,12 @@
             ]
           },
           {
+            "title": "Left and right",
+            "enum": [
+              "Left_And_Right"
+            ]
+          },
+          {
             "title": "All directions",
             "enum": [
               "All"
@@ -101,7 +107,7 @@
             ]
           }
         ],
-        "description": "What to set the vane to when swing is switched on in HomeKit. On a TP6X_RAC_16K only Up_And_Low works: Vertical and SwingUD are rejected outright, and All is accepted and then ignored. The others are kept for units that differ; the log says if yours refuses the one you pick."
+        "description": "Direction used by the main AC swing toggle. TP6X_RAC_17K units were verified with Fix, Up_And_Low, Left_And_Right and All. Some other models only support Up_And_Low."
       },
       "convenienceModes": {
         "title": "Convenience mode switches",
@@ -216,13 +222,19 @@
             ]
           },
           {
+            "title": "One shared sensor for a multisplit outdoor unit",
+            "enum": [
+              "shared"
+            ]
+          },
+          {
             "title": "Off",
             "enum": [
               "off"
             ]
           }
         ],
-        "description": "Publishes the unit's outdoor sensor as a temperature tile. On the air conditioner it takes that unit's room; as a separate accessory it appears on its own in the Home app, so you can assign it wherever you like \u2014 an outdoor room, say. It only shows up once the unit actually reports a reading."
+        "description": "Publishes the unit's outdoor sensor as a temperature tile. On the air conditioner it takes that unit's room; as a separate accessory it appears on its own in the Home app, so you can assign it wherever you like \u2014 an outdoor room, say. It only shows up once the unit actually reports a reading. Shared publishes exactly one separate accessory using readings from all configured ACs. Use only when these ACs share one outdoor unit. A fresh reading from a running AC is preferred, with fallback to another unit."
       },
       "outdoorTemperatureUnit": {
         "title": "Outdoor temperature scale",
@@ -254,7 +266,7 @@
         "condition": {
           "functionBody": "return model.outdoorTemperature !== 'off';"
         },
-        "description": "Some units keep publishing an outdoor figure with the compressor stopped, and it is not one the sensor measured \u2014 it drifts towards the room's temperature instead. Turn this on if yours does: the tile then reads \"No Response\" while the unit is off rather than showing a number nothing measured, and goes live again the moment it starts. Leave it off if your outdoor reading is trustworthy when idle."
+        "description": "Some units keep publishing an outdoor figure with the compressor stopped, and it is not one the sensor measured \u2014 it drifts towards the room's temperature instead. Turn this on if yours does: the tile then reads \"No Response\" while the unit is off rather than showing a number nothing measured, and goes live again the moment it starts. Leave it off if your outdoor reading is trustworthy when idle. With a shared sensor, hides the reading only when no running indoor unit has a fresh reading."
       },
       "freezeIndoorTemperatureWhenOff": {
         "title": "Hold the room temperature while the unit is off",
@@ -291,6 +303,26 @@
           "maximum": 1440
         },
         "description": "Optional local countdowns, for example 30, 60, 120. Start while the AC is on. Selecting another replaces the countdown; turning its switch off cancels it. Requires Homebridge to be running. Brief restarts preserve the deadline; timers more than five minutes overdue are discarded."
+      },
+      "detailedSwing": {
+        "title": "Separate swing axes",
+        "type": "boolean",
+        "default": false,
+        "description": "Adds Up Down and Left Right switches. Both on selects All; both off selects Fix. Enable only after confirming all four directions on your model. Changes do not power on the AC."
+      },
+      "spiSwitch": {
+        "title": "SPI switch",
+        "type": "boolean",
+        "default": false,
+        "description": "Adds Samsung SPI (S-Plasma Ion) on/off when reported by the AC. Enable only after checking command support. The switch reflects the setting, not measured air quality or confirmation that ionizer hardware is installed."
+      },
+      "sharedOutdoorName": {
+        "title": "Shared outdoor sensor name",
+        "type": "string",
+        "default": "AC Outdoor Temperature",
+        "condition": {
+          "functionBody": "return model.outdoorTemperature === 'shared';"
+        }
       }
     }
   },
@@ -309,6 +341,7 @@
     },
     "updateInterval",
     "swingDirection",
+    "detailedSwing",
     {
       "key": "convenienceModes",
       "type": "array",
@@ -328,6 +361,7 @@
       ]
     },
     "autoCleanSwitch",
+    "spiSwitch",
     {
       "key": "shutdownTimers",
       "type": "array",
@@ -337,6 +371,7 @@
       ]
     },
     "outdoorTemperature",
+    "sharedOutdoorName",
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
     "freezeIndoorTemperatureWhenOff",
