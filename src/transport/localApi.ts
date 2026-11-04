@@ -39,7 +39,7 @@ export interface RawResponse {
   body: string;
 }
 
-export type DeviceApi = Pick<LocalApi, 'description' | 'get' | 'put' | 'post' | 'close'>;
+export type DeviceApi = Pick<LocalApi, 'description' | 'get' | 'getText' | 'put' | 'post' | 'close'>;
 
 export class LocalApi {
   readonly host: string;
@@ -79,6 +79,11 @@ export class LocalApi {
 
   async get<T>(path: string): Promise<T> {
     return JSON.parse(await this.send('GET', path)) as T;
+  }
+
+  /** Some firmware resources carry base64 data despite their JSON content type. */
+  async getText(path: string): Promise<string> {
+    return this.send('GET', path);
   }
 
   async put(path: string, body: unknown): Promise<string> {

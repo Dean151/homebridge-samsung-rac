@@ -21,6 +21,15 @@ function build() {
 }
 
 describe('UUID-bound API', () => {
+  it('reads non-JSON history only after verifying the discovered identity', async () => {
+    const h = build();
+    h.reply.mockImplementation(async request => ({ status: 200, headers: {},
+      body: request.path === '/files/usage.db' ? 'U1FMaXRl' : JSON.stringify(document()),
+    }));
+    await expect(h.api.getText('/files/usage.db')).resolves.toBe('U1FMaXRl');
+    expect(h.sent.map(request => request.path)).toEqual(['/devices', '/files/usage.db']);
+    expect(h.sent.every(request => request.method === 'GET')).toBe(true);
+  });
   it('discovers a changed address, verifies identity, and reuses the pairing token', async () => {
     const { api, sent, discovery } = build();
     await api.put('/devices/0/operation', { Operation: { power: 'Off' } });

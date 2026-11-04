@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2-local.3] - 2026-11-04
+
+### Fixed
+
+- Readable history text in dark mode and a bounded, scrollable history table.
+- Show the existing SSDP device UUID field in the configuration form layout.
+
+## [0.4.2-local.2] - 2026-11-04
+
+### Added
+
+- Optional Auto Clean switch with read-back confirmation, separate from operating modes.
+- On-demand local usage history in plugin settings, with raw cumulative counters,
+  reset detection and CSV export; no inferred runtime or energy units.
+- History downloads retain UUID discovery and authenticated identity checks.
+- Read-only SQLite parsing using the Node built-in module, without new dependencies.
+
+
 ## [0.4.2-ssdp.1] - 2026-11-04
 
 ### Added

@@ -3,7 +3,7 @@
   "pluginType": "platform",
   "singular": true,
   "customUi": true,
-  "headerDisplay": "Controls a Samsung room air conditioner over its local network API. Add each unit's IP address below, then pair it from the card above — pairing needs the unit powered off and back on, so it cannot be done from this form alone.",
+  "headerDisplay": "Controls a Samsung room air conditioner over its local network API. Add each unit's IP address below, then pair it from the card above \u2014 pairing needs the unit powered off and back on, so it cannot be done from this form alone.",
   "schema": {
     "type": "object",
     "properties": {
@@ -40,9 +40,24 @@
               "type": "string",
               "default": "auto",
               "oneOf": [
-                { "title": "Detect automatically", "enum": ["auto"] },
-                { "title": "This unit can heat", "enum": ["on"] },
-                { "title": "This unit cannot heat", "enum": ["off"] }
+                {
+                  "title": "Detect automatically",
+                  "enum": [
+                    "auto"
+                  ]
+                },
+                {
+                  "title": "This unit can heat",
+                  "enum": [
+                    "on"
+                  ]
+                },
+                {
+                  "title": "This unit cannot heat",
+                  "enum": [
+                    "off"
+                  ]
+                }
               ],
               "description": "Samsung units under-report what they support: the reference unit leaves Heat out of its mode list even while it is heating. Detection reads the unit's rated heating capacity instead, which is right for every unit seen so far. Set this only if the Home app offers a Heat button that does nothing, or hides one that should work."
             }
@@ -61,10 +76,30 @@
         "type": "string",
         "default": "Up_And_Low",
         "oneOf": [
-          { "title": "Up and down (confirmed working)", "enum": ["Up_And_Low"] },
-          { "title": "All directions", "enum": ["All"] },
-          { "title": "Vertical", "enum": ["Vertical"] },
-          { "title": "Swing up/down", "enum": ["SwingUD"] }
+          {
+            "title": "Up and down (confirmed working)",
+            "enum": [
+              "Up_And_Low"
+            ]
+          },
+          {
+            "title": "All directions",
+            "enum": [
+              "All"
+            ]
+          },
+          {
+            "title": "Vertical",
+            "enum": [
+              "Vertical"
+            ]
+          },
+          {
+            "title": "Swing up/down",
+            "enum": [
+              "SwingUD"
+            ]
+          }
         ],
         "description": "What to set the vane to when swing is switched on in HomeKit. On a TP6X_RAC_16K only Up_And_Low works: Vertical and SwingUD are rejected outright, and All is accepted and then ignored. The others are kept for units that differ; the log says if yours refuses the one you pick."
       },
@@ -81,12 +116,42 @@
               "required": true,
               "default": "Quiet",
               "oneOf": [
-                { "title": "Comfort", "enum": ["Comfort"] },
-                { "title": "Quiet", "enum": ["Quiet"] },
-                { "title": "Speed", "enum": ["Speed"] },
-                { "title": "Smart", "enum": ["Smart"] },
-                { "title": "2Step", "enum": ["2Step"] },
-                { "title": "Sleep", "enum": ["Sleep"] }
+                {
+                  "title": "Comfort",
+                  "enum": [
+                    "Comfort"
+                  ]
+                },
+                {
+                  "title": "Quiet",
+                  "enum": [
+                    "Quiet"
+                  ]
+                },
+                {
+                  "title": "Speed",
+                  "enum": [
+                    "Speed"
+                  ]
+                },
+                {
+                  "title": "Smart",
+                  "enum": [
+                    "Smart"
+                  ]
+                },
+                {
+                  "title": "2Step",
+                  "enum": [
+                    "2Step"
+                  ]
+                },
+                {
+                  "title": "Sleep",
+                  "enum": [
+                    "Sleep"
+                  ]
+                }
               ],
               "description": "The unit's own word for it. This is what gets sent, and what the switch's HomeKit identity is built from \u2014 so a switch keeps its automations however it is named below."
             },
@@ -111,8 +176,18 @@
               "required": true,
               "default": "Dry",
               "oneOf": [
-                { "title": "Dry", "enum": ["Dry"] },
-                { "title": "Fan only (the unit calls it Wind)", "enum": ["Wind"] }
+                {
+                  "title": "Dry",
+                  "enum": [
+                    "Dry"
+                  ]
+                },
+                {
+                  "title": "Fan only (the unit calls it Wind)",
+                  "enum": [
+                    "Wind"
+                  ]
+                }
               ]
             },
             "name": {
@@ -128,9 +203,24 @@
         "type": "string",
         "default": "linked",
         "oneOf": [
-          { "title": "On \u2014 as a second sensor on the air conditioner (same room)", "enum": ["linked"] },
-          { "title": "On \u2014 as a separate accessory (can be put in another room)", "enum": ["separate"] },
-          { "title": "Off", "enum": ["off"] }
+          {
+            "title": "On \u2014 as a second sensor on the air conditioner (same room)",
+            "enum": [
+              "linked"
+            ]
+          },
+          {
+            "title": "On \u2014 as a separate accessory (can be put in another room)",
+            "enum": [
+              "separate"
+            ]
+          },
+          {
+            "title": "Off",
+            "enum": [
+              "off"
+            ]
+          }
         ],
         "description": "Publishes the unit's outdoor sensor as a temperature tile. On the air conditioner it takes that unit's room; as a separate accessory it appears on its own in the Home app, so you can assign it wherever you like \u2014 an outdoor room, say. It only shows up once the unit actually reports a reading."
       },
@@ -139,17 +229,31 @@
         "type": "string",
         "default": "fahrenheit",
         "oneOf": [
-          { "title": "Fahrenheit (confirmed on TP6X_RAC_16K)", "enum": ["fahrenheit"] },
-          { "title": "Celsius", "enum": ["celsius"] }
+          {
+            "title": "Fahrenheit (confirmed on TP6X_RAC_16K)",
+            "enum": [
+              "fahrenheit"
+            ]
+          },
+          {
+            "title": "Celsius",
+            "enum": [
+              "celsius"
+            ]
+          }
         ],
-        "condition": { "functionBody": "return model.outdoorTemperature !== 'off';" },
+        "condition": {
+          "functionBody": "return model.outdoorTemperature !== 'off';"
+        },
         "description": "The scale the unit reports its outdoor sensor in. Stated nowhere in what the unit reports, and independent of the unit's own setting: a TP6X_RAC_16K reports itself in Celsius and this in Fahrenheit, measured against a known outdoor temperature. Fahrenheit is the default for that reason. If your tile reads far too cold, your unit reports Celsius here \u2014 switch it."
       },
       "hideOutdoorTemperatureWhenOff": {
         "title": "Hide the outdoor reading while the unit is off",
         "type": "boolean",
         "default": false,
-        "condition": { "functionBody": "return model.outdoorTemperature !== 'off';" },
+        "condition": {
+          "functionBody": "return model.outdoorTemperature !== 'off';"
+        },
         "description": "Some units keep publishing an outdoor figure with the compressor stopped, and it is not one the sensor measured \u2014 it drifts towards the room's temperature instead. Turn this on if yours does: the tile then reads \"No Response\" while the unit is off rather than showing a number nothing measured, and goes live again the moment it starts. Leave it off if your outdoor reading is trustworthy when idle."
       },
       "freezeIndoorTemperatureWhenOff": {
@@ -168,6 +272,12 @@
         "title": "Client certificate URL",
         "type": "string",
         "description": "Advanced. Where to download the Samsung client certificate from. Change this only if you mirror it yourself."
+      },
+      "autoCleanSwitch": {
+        "title": "Auto-clean switch",
+        "type": "boolean",
+        "default": false,
+        "description": "Show the self-drying setting when the AC reports Autoclean. On means enabled after shutdown, not cleaning now. Some units accept setting changes only while powered on."
       }
     }
   },
@@ -176,7 +286,13 @@
       "key": "devices",
       "type": "array",
       "buttonText": "Add an air conditioner",
-      "items": ["devices[].name", "devices[].host", "devices[].token", "devices[].heating"]
+      "items": [
+        "devices[].name",
+        "devices[].host",
+        "devices[].deviceUuid",
+        "devices[].token",
+        "devices[].heating"
+      ]
     },
     "updateInterval",
     "swingDirection",
@@ -184,14 +300,21 @@
       "key": "convenienceModes",
       "type": "array",
       "buttonText": "Add a convenience mode switch",
-      "items": ["convenienceModes[].mode", "convenienceModes[].name"]
+      "items": [
+        "convenienceModes[].mode",
+        "convenienceModes[].name"
+      ]
     },
     {
       "key": "modeSwitches",
       "type": "array",
       "buttonText": "Add a dry or fan-only switch",
-      "items": ["modeSwitches[].mode", "modeSwitches[].name"]
+      "items": [
+        "modeSwitches[].mode",
+        "modeSwitches[].name"
+      ]
     },
+    "autoCleanSwitch",
     "outdoorTemperature",
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
@@ -201,7 +324,10 @@
       "title": "Advanced",
       "expandable": true,
       "expanded": false,
-      "items": ["requestTimeout", "certificateUrl"]
+      "items": [
+        "requestTimeout",
+        "certificateUrl"
+      ]
     }
   ]
 }

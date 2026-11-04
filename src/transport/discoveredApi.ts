@@ -121,6 +121,16 @@ export class DiscoveredApi implements DeviceApi {
     }
   }
 
+  async getText(path: string): Promise<string> {
+    const api = await this.ready();
+    try {
+      return await api.getText(path);
+    } catch (error) {
+      this.failed(api, error);
+      throw error;
+    }
+  }
+
   async post(path: string, body: unknown): Promise<string> {
     const api = await this.ready();
     try {

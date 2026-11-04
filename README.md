@@ -357,6 +357,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
 | `convenienceModes` | none | `Comode` values to publish a switch for, as `"Quiet"` or `{ "mode": "Quiet", "name": "WindFree" }`. One runs at a time, so the switches act as one group. |
 | `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind`, the two HomeKit's air conditioner tile cannot express. Same two shapes. |
+| `autoCleanSwitch` | `false` | Expose Auto Clean when the unit reports `Autoclean_On` or `Autoclean_Off`. This is an enabled setting, not a cleaning-in-progress indicator. |
 | `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
 | `hideOutdoorTemperatureWhenOff` | `false` | Stop reporting the outdoor tile while the unit is off, for units whose reading is only trustworthy when running. |
@@ -387,3 +388,28 @@ npm run watch    # rebuild and restart Homebridge on change
 Unit tests never touch the network: `nock` is locked down and `fetch` is replaced
 outright. The fixture in `tests/fixtures/devices.json` is a real capture from the
 reference unit.
+
+
+### Local preview: Auto-clean and runtime history
+
+The `0.4.2-local.3` preview retains UUID discovery and adds an opt-in Auto Clean
+switch. Use `"autoCleanSwitch": true` with
+`"modeSwitches": [{"mode":"Dry"}, {"mode":"Wind"}]` to expose all three controls.
+Dry and Fan Only select an operating mode; the main AC tile controls power.
+Turning a mode switch off returns to the last ordinary mode (or Cool as fallback).
+Auto Clean is independent of those modes and continues to read enabled while the
+unit is off. Some firmware accepts setting changes only while powered on. Every
+write is confirmed by a status read; a rejected setting returns to the actual value.
+
+In the plugin settings, **History** beside a paired unit reads its local usage
+database on demand. The table shows the latest 60 records; CSV exports every
+record. It requires Node.js 22.13+ with `node:sqlite` available (the Pi uses 24).
+There are no new dependencies or background history polls. The database is opened
+read-only in a private temporary directory and removed after reading.
+
+The observed date keys use `YYYYMMDDHH`, with an unconfirmed device timezone.
+Runtime values are cumulative counters whose units are not yet calibrated; the
+view shows raw values and increases between consecutive records, not hours or
+per-hour consumption. Counter decreases are marked as resets. All three tested
+TP6X_RAC_17K units report zero for every energy counter, so this is not usable
+energy/kWh monitoring. The data can also lag recent operation.

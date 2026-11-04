@@ -31,6 +31,7 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
     this.onRequest('/status', this.status.bind(this));
     this.onRequest('/certificate/fetch', this.fetchCertificate.bind(this));
     this.onRequest('/device/test', this.testDevice.bind(this));
+    this.onRequest('/device/history', this.usageHistory.bind(this));
     this.onRequest('/pair/start', this.pairStart.bind(this));
     this.onRequest('/pair/cancel', this.pairCancel.bind(this));
     this.onRequest('/token/set', this.tokenSet.bind(this));
@@ -88,7 +89,15 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
     return { stored: true, path: store.path };
   }
 
-  async testDevice({ host, deviceUuid, certificateUrl } = {}) {
+  async testDevice(options = {}) {
+    return this.readDevice(options, false);
+  }
+
+  async usageHistory(options = {}) {
+    return this.readDevice(options, true);
+  }
+
+  async readDevice({ host, deviceUuid, certificateUrl } = {}, history = false) {
     if (!host) {
       throw new RequestError('Enter the air conditioner\'s IP address first.', { status: 400 });
     }
@@ -108,6 +117,10 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
       const device = devicesFrom(await api.get('/devices'))[0];
       if (!device) {
         throw new RequestError(`${host} answered but reported no devices.`, { status: 502 });
+      }
+      if (history) {
+        const { readUsageHistory } = plugin('usageHistory');
+        return await readUsageHistory(api);
       }
       return {
         model: device.description,

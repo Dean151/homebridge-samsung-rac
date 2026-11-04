@@ -92,6 +92,8 @@ export interface NormalisedConfig {
    * the Samsung app; the plugin reports them as Auto and leaves them alone.
    */
   modeSwitches: ModeSwitchConfig[];
+  /** Publish the persistent self-drying setting when the unit reports it. */
+  autoCleanSwitch: boolean;
   certificateUrl?: string;
 }
 
@@ -256,6 +258,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       config.freezeIndoorTemperatureWhenOff, 'freezeIndoorTemperatureWhenOff', log),
     convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
+    autoCleanSwitch: toBoolean(config.autoCleanSwitch, 'autoCleanSwitch', log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
