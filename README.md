@@ -413,3 +413,30 @@ view shows raw values and increases between consecutive records, not hours or
 per-hour consumption. Counter decreases are marked as resets. All three tested
 TP6X_RAC_17K units report zero for every energy counter, so this is not usable
 energy/kWh monitoring. The data can also lag recent operation.
+
+
+### Local shutoff timers
+
+Set `"shutdownTimers": [30, 60, 120]` to add **Off in 30 min**, **Off in 60 min**,
+and **Off in 120 min** switches to each AC. Durations are whole minutes from 1
+through 1440, with up to eight distinct durations. No timers are exposed by default.
+
+Start the AC using its main tile, then turn on a timer switch. This schedules
+power-off; it never powers on an idle AC. Selecting another duration replaces the
+countdown, and turning the active timer switch off cancels it without turning off
+the AC. A power-off observed from Home, SmartThings, or the remote also cancels it.
+A duplicate On command deliberately starts a fresh countdown from that moment.
+
+The deadline is stored with the existing Homebridge accessory and resumes after a
+restart. The Pi and Homebridge must be available to execute it. A brief failure is
+retried for up to five minutes after the original deadline; older deadlines are
+discarded rather than shutting down a possibly new session hours later. Each
+attempt reads the AC first and confirms the resulting off state. Power cycles
+that happen entirely while Homebridge is offline cannot be detected.
+
+Quiet and Speed use the existing `convenienceModes` setting:
+`[{"mode":"Quiet"}, {"mode":"Speed"}]`. Both values were confirmed by local
+read-back on all three TP6X_RAC_17K units in Cool mode on 2026-11-04. This confirms
+the setting, not a measured acoustic or cooling-performance change, and does not
+identify either preset as WindFree. Presets are mutually exclusive and can change
+fan settings as part of their intended operation.

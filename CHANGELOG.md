@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2-local.4] - 2026-11-04
+
+### Added
+
+- Optional local shutoff switches with replaceable countdowns, persisted deadlines,
+  manual-off cancellation, and a bounded five-minute recovery period.
+- Fresh device reads and confirmed power-off for timer execution; stale timers
+  cannot act hours after a long outage.
+- Verified Quiet and Speed setting support on three TP6X_RAC_17K units.
+
+
 ## [0.4.2-local.3] - 2026-11-04
 
 ### Fixed

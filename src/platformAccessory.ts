@@ -4,6 +4,7 @@ import type { ApplyResult, DeviceAdapter } from './deviceAdapter';
 import type { RacStatus } from './racStatus';
 import type { ModeSwitchConfig } from './config';
 import { setpointStep } from './temperature';
+import { ShutdownTimer } from './shutdownTimer';
 
 /**
  * Device modes that run the unit without driving towards a setpoint. HomeKit's
@@ -91,6 +92,9 @@ export class SamsungRacAccessory {
   private configured = false;
 
   private pollTimer: NodeJS.Timeout | null = null;
+  private shutdownTimer?: ShutdownTimer;
+  private timerServices = new Map<number, Service>();
+  private timerRequest = 0;
 
   private minTemp = 16;
   private maxTemp = 30;
@@ -192,6 +196,7 @@ export class SamsungRacAccessory {
     this.configureFilter();
     this.configureOutdoorSensor();
     this.configureModeSwitches();
+    this.configureShutdownTimers();
     this.configured = true;
 
     const interval = this.platform.settings.updateInterval;
@@ -205,6 +210,8 @@ export class SamsungRacAccessory {
 
   /** Called when Homebridge shuts the platform down. */
   stop(): void {
+    this.timerRequest++;
+    this.shutdownTimer?.stop();
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
@@ -213,6 +220,105 @@ export class SamsungRacAccessory {
   }
 
   // --- configuration -------------------------------------------------------
+
+  private configureShutdownTimers(): void {
+    const durations = this.platform.settings.shutdownTimers ?? [];
+    for (const service of [...this.accessory.services]) {
+      if (service.UUID === this.platform.Service.Switch.UUID && service.subtype?.startsWith('shutdown-')
+        && !durations.some(minutes => service.subtype === `shutdown-${minutes}`)) {
+        this.accessory.removeService(service);
+      }
+    }
+    for (const minutes of durations) {
+      const subtype = `shutdown-${minutes}`;
+      const name = `${this.accessory.displayName} Off in ${minutes} min`;
+      const service = this.accessory.getServiceById(this.platform.Service.Switch, subtype)
+        ?? this.accessory.addService(this.platform.Service.Switch, name, subtype);
+      this.nameService(this.accessory, service, subtype, name);
+      service.getCharacteristic(this.platform.Characteristic.On)
+        .onGet(() => this.shutdownTimer?.state?.minutes === minutes)
+        .onSet(value => this.setShutdownTimer(minutes, value));
+      this.service.addLinkedService(service);
+      this.timerServices.set(minutes, service);
+    }
+    const saved = this.accessory.context.shutdownTimer;
+    this.shutdownTimer = new ShutdownTimer({
+      durations,
+      changed: state => {
+        if (state) {
+          this.accessory.context.shutdownTimer = { ...state };
+        } else {
+          delete this.accessory.context.shutdownTimer;
+        }
+        this.platform.api.updatePlatformAccessories([this.accessory]);
+        this.pushShutdownTimers();
+      },
+      turnOff: async stillCurrent => {
+        // No stale/cache fallback when deciding whether a countdown should act.
+        this.adapter.invalidate();
+        const status = await this.adapter.getStatus();
+        if (!stillCurrent()) {
+          return false;
+        }
+        this.status = status;
+        this.markResponsive();
+        if (!this.status.active) {
+          this.push();
+          return true;
+        }
+        const result = await this.adapter.setPower(false);
+        this.status = result.status;
+        this.markResponsive();
+        this.push();
+        if (result.applied && !this.status.active) {
+          this.platform.log.info(`${this.accessory.displayName}: timed shutoff confirmed.`);
+          return true;
+        }
+        return false;
+      },
+      warn: message => this.platform.log.warn(`${this.accessory.displayName}: ${message}`),
+    });
+    this.shutdownTimer.restore(saved, this.responsive ? this.status.active : undefined);
+    this.pushShutdownTimers();
+  }
+
+  private async setShutdownTimer(minutes: number, value: CharacteristicValue): Promise<void> {
+    const request = ++this.timerRequest;
+    if (value !== true) {
+      if (this.shutdownTimer?.state?.minutes === minutes) {
+        this.shutdownTimer.cancel();
+      }
+      this.pushShutdownTimers();
+      return;
+    }
+    try {
+      this.adapter.invalidate();
+      const status = await this.adapter.getStatus();
+      if (request !== this.timerRequest) {
+        return;
+      }
+      this.status = status;
+      this.markResponsive();
+      if (status.active) {
+        this.shutdownTimer?.arm(minutes);
+        this.platform.log.info(`${this.accessory.displayName}: will switch off in ${minutes} minutes.`);
+      } else {
+        this.shutdownTimer?.cancel();
+        this.platform.log.info(`${this.accessory.displayName}: turn the AC on before starting a shutoff timer.`);
+      }
+      this.push();
+    } catch (error) {
+      this.platform.log.warn(`${this.accessory.displayName}: could not start shutoff timer: ${messageOf(error)}`);
+      this.pushShutdownTimers();
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
+  }
+
+  private pushShutdownTimers(): void {
+    for (const [minutes, service] of this.timerServices) {
+      service.updateCharacteristic(this.platform.Characteristic.On, this.shutdownTimer?.state?.minutes === minutes);
+    }
+  }
 
   private applySetpointRange(): void {
     const min = Number.isFinite(this.status.minSetpoint) ? this.status.minSetpoint! : this.minTemp;
@@ -1155,6 +1261,11 @@ export class SamsungRacAccessory {
     if (!this.responsive) {
       return;
     }
+
+    if (!this.status.active) {
+      this.shutdownTimer?.cancel();
+    }
+    this.pushShutdownTimers();
 
     try {
       this.service.updateCharacteristic(this.platform.Characteristic.Active, this.activeValue());

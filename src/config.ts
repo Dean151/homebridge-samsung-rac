@@ -94,6 +94,8 @@ export interface NormalisedConfig {
   modeSwitches: ModeSwitchConfig[];
   /** Publish the persistent self-drying setting when the unit reports it. */
   autoCleanSwitch: boolean;
+  /** Optional local countdown switches; minutes, one countdown per AC. */
+  shutdownTimers: number[];
   certificateUrl?: string;
 }
 
@@ -259,10 +261,27 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
     autoCleanSwitch: toBoolean(config.autoCleanSwitch, 'autoCleanSwitch', log),
+    shutdownTimers: toShutdownTimers(config.shutdownTimers, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
   };
+}
+
+function toShutdownTimers(value: unknown, log: Logging): number[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    log.warn('Ignoring shutdownTimers: expected an array of whole minutes.');
+    return [];
+  }
+  const valid = value.filter((minutes): minutes is number =>
+    typeof minutes === 'number' && Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440);
+  if (valid.length !== value.length) {
+    log.warn('Ignoring invalid shutoff durations; use whole minutes from 1 to 1440.');
+  }
+  return [...new Set(valid)].sort((a, b) => a - b).slice(0, 8);
 }
 
 /**

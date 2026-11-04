@@ -278,6 +278,19 @@
         "type": "boolean",
         "default": false,
         "description": "Show the self-drying setting when the AC reports Autoclean. On means enabled after shutdown, not cleaning now. Some units accept setting changes only while powered on."
+      },
+      "shutdownTimers": {
+        "title": "Shutoff timer switches (minutes)",
+        "type": "array",
+        "default": [],
+        "maxItems": 8,
+        "uniqueItems": true,
+        "items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        },
+        "description": "Optional local countdowns, for example 30, 60, 120. Start while the AC is on. Selecting another replaces the countdown; turning its switch off cancels it. Requires Homebridge to be running. Brief restarts preserve the deadline; timers more than five minutes overdue are discarded."
       }
     }
   },
@@ -315,6 +328,14 @@
       ]
     },
     "autoCleanSwitch",
+    {
+      "key": "shutdownTimers",
+      "type": "array",
+      "buttonText": "Add a shutoff timer",
+      "items": [
+        "shutdownTimers[]"
+      ]
+    },
     "outdoorTemperature",
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
