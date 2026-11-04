@@ -39,8 +39,10 @@ export interface RawResponse {
   body: string;
 }
 
+export type DeviceApi = Pick<LocalApi, 'description' | 'get' | 'put' | 'post' | 'close'>;
+
 export class LocalApi {
-  private readonly host: string;
+  readonly host: string;
   private readonly port: number;
   private readonly timeoutMs: number;
   private readonly pem: Buffer;

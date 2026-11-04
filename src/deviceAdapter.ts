@@ -1,7 +1,7 @@
 import type { Logging } from 'homebridge';
 import { devicesFrom, RacDevicesResponse, RacStatus, RacStatusOptions, toRacStatus } from './racStatus';
 import { fromCelsius, toCelsiusSetpoint, type TemperatureUnit } from './temperature';
-import { LocalApi } from './transport/localApi';
+import type { DeviceApi } from './transport/localApi';
 
 /**
  * The only thing that knows the local API's JSON shapes.
@@ -83,7 +83,7 @@ export class DeviceAdapter {
   private readonly statusOptions: RacStatusOptions;
 
   constructor(
-    private readonly api: LocalApi,
+    private readonly api: DeviceApi,
     private readonly deviceId: string,
     private readonly log: Logging,
     options: DeviceAdapterOptions = {},

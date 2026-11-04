@@ -23,7 +23,12 @@
               "type": "string",
               "required": true,
               "format": "ipv4",
-              "description": "The unit's address on your network. Give it a fixed DHCP lease on your router — the plugin cannot follow it if it moves."
+              "description": "Current or last-known address. Without a device UUID below, reserve this address in your router. With a UUID, it is a fallback and discovery hint."
+            },
+            "deviceUuid": {
+              "title": "Device UUID for automatic discovery (optional)",
+              "type": "string",
+              "description": "Use the UUID returned by this unit's local API or pairing record to follow address changes over SSDP. Leave empty to use only the configured IP address."
             },
             "token": {
               "title": "Device token (optional)",

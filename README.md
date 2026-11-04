@@ -160,8 +160,8 @@ is never withdrawn afterwards — some units publish nothing until they are runn
 2. **Fetch the certificate.** The local API requires a client certificate that
    bundles a private key. It is not shipped with this plugin: it is downloaded
    once and stored next to your Homebridge config, on your machine only.
-3. **Add your air conditioner's IP address** and save. Give it a fixed DHCP lease
-   on your router — the plugin cannot follow a unit that moves. You can add
+3. **Add your air conditioner's IP address** and save. Reserve its DHCP address,
+   or enable UUID-based discovery below to follow address changes. You can add
    several units.
 4. **Pair.** This is the awkward part, and the order matters:
    - power the air conditioner **off**
@@ -172,6 +172,39 @@ is never withdrawn afterwards — some units publish nothing until they are runn
    port 8889 the moment it powers on, and that callback carries the token.
 
 The token is stored alongside the certificate, outside `config.json`.
+
+### Automatic address discovery
+
+To follow DHCP address changes, add the unit's `deviceUuid` alongside its
+current `host`. Use the UUID from its local `/devices` response or the
+`deviceUuid` field in its existing pairing record; do not copy the token into
+configuration. For example:
+
+```json
+{
+  "name": "Lounge",
+  "host": "192.168.1.50",
+  "deviceUuid": "C0970000-0001-0000-0000-000000000000"
+}
+```
+
+With a UUID configured, `host` is a fallback and unicast discovery hint. The
+plugin sends a bounded SSDP search on directly connected private IPv4 networks,
+then verifies the UUID returned by the authenticated AC API. Existing pairing
+tokens are looked up by UUID without rewriting the credential file. Existing
+HomeKit identities and room assignments are retained.
+
+After a connection fails, the next request discovers the unit again. Failed
+connection attempts back off for 30 seconds. Units unavailable at Homebridge
+startup are retried every 30 seconds; their cached accessories are retained.
+Concurrent discovery requests share a scan. An uncertain control command is
+never automatically replayed: a later status read reconciles the AC's state.
+
+Discovery requires SSDP traffic between Homebridge and the ACs on the same
+subnet. It cannot follow a moved unit if the network blocks discovery. Without
+`deviceUuid`, the original fixed-address behavior is unchanged. To pair again,
+use the AC's current address in the pairing UI. Status still uses local polling;
+SSDP discovers addresses, not changes in temperature or operating state.
 
 ### If pairing never completes
 
@@ -315,7 +348,8 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 
 | Key | Default | |
 |---|---|---|
-| `devices[].host` | — | The unit's IP address. Required. |
+| `devices[].host` | — | The unit's IP address, or last-known address when discovery is enabled. Required. |
+| `devices[].deviceUuid` | — | Optional stable UUID; enables SSDP discovery and identity checks. |
 | `devices[].name` | the unit's own name | Shown in the Home app. |
 | `devices[].token` | — | Only if you paired outside this plugin. |
 | `devices[].heating` | `auto` | `on` or `off` to override whether Heat is offered. `auto` reads it from the unit, which is right for every unit seen so far. |

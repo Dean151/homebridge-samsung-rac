@@ -1,4 +1,5 @@
 import type { Logging, PlatformConfig } from 'homebridge';
+import { normaliseDeviceUuid } from './discovery/ssdp';
 
 /**
  * Config is normalised once, here, rather than defaulted with `??` at every use
@@ -9,6 +10,8 @@ import type { Logging, PlatformConfig } from 'homebridge';
 export interface DeviceConfig {
   name?: string;
   host: string;
+  /** Opt into SSDP discovery; host becomes a last-known address hint. */
+  deviceUuid?: string;
   /** Optional: overrides the paired token in the token store. */
   token?: string;
   /**
@@ -194,6 +197,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
   const raw = Array.isArray(config.devices) ? (config.devices as unknown[]) : [];
   const devices: DeviceConfig[] = [];
   const seen = new Set<string>();
+  const seenUuids = new Set<string>();
 
   for (const entry of raw) {
     const candidate = entry as Partial<DeviceConfig> | null;
@@ -208,9 +212,22 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       continue;
     }
 
+    const deviceUuid = normaliseDeviceUuid(candidate?.deviceUuid);
+    if (candidate?.deviceUuid && !deviceUuid) {
+      log.warn(`Ignoring ${host}: deviceUuid must be a valid Samsung device UUID.`);
+      continue;
+    }
+    if (deviceUuid && seenUuids.has(deviceUuid)) {
+      log.warn(`Ignoring a duplicate device UUID ${deviceUuid}.`);
+      continue;
+    }
+    if (deviceUuid) {
+      seenUuids.add(deviceUuid);
+    }
     seen.add(host);
     devices.push({
       host,
+      deviceUuid,
       name: typeof candidate?.name === 'string' && candidate.name.trim() ? candidate.name.trim() : undefined,
       token: typeof candidate?.token === 'string' && candidate.token.trim() ? candidate.token.trim() : undefined,
       heating: toHeating((candidate as { heating?: unknown } | null)?.heating, host, log),

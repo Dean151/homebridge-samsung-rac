@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2-ssdp.1] - 2026-11-04
+
+### Added
+
+- Optional UUID-based SSDP discovery at startup and after connection failures.
+- Authenticated device identity checks before using discovered endpoints.
+- Pairing lookup by UUID, retaining existing credentials and HomeKit identities.
+- Bounded shared scans, offline backoff, startup retries and shutdown cleanup.
+- Discovery-aware connection testing and token management in the plugin UI.
+
+
 ## [0.4.1] - 2026-09-29
 
 ### Fixed
