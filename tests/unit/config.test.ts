@@ -34,7 +34,9 @@ describe('normaliseConfig', () => {
       sharedOutdoorName: 'Outside', detailedSwing: true, spiSwitch: true } as never, logger() as never);
     expect(config).toMatchObject({ outdoorTemperaturePlacement: 'shared', outdoorTemperatureUnit: 'F',
       sharedOutdoorName: 'Outside', detailedSwing: true, spiSwitch: true });
-    expect(normaliseConfig({ platform: 'x' }, logger() as never)).toMatchObject({ detailedSwing: false, spiSwitch: false });
+    expect(normaliseConfig({ platform: 'x' }, logger() as never)).toMatchObject({ detailedSwing: false, spiSwitch: false, adaptivePolling: false });
+    expect(normaliseConfig({ platform: 'x', adaptivePolling: true, updateInterval: 5 } as never, logger() as never))
+      .toMatchObject({ adaptivePolling: true, updateInterval: 5 });
   });
 
   it('fills in the defaults', () => {

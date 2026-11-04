@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2-local.6] - 2026-11-04
+
+### Added
+
+- Optional adaptive polling: two-second follow-ups for thirty seconds after a
+  control change or HomeKit command, then the configured normal interval.
+- Progressive offline backoff, including failed reads served from cached status.
+- Completion-based scheduling, shared concurrent reads and one read/write queue
+  per AC, reusing command read-backs instead of overlapping background requests.
+
+### Fixed
+
+- Failed or refused writes are no longer incorrectly suppressed as successful
+  duplicates when retried.
+
+
 ## [0.4.2-local.5] - 2026-11-04
 
 ### Added

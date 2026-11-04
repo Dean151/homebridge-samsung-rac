@@ -491,3 +491,40 @@ TP6X_RAC_16K; the tested 17K units all reported raw `65` (18.3°C when interpret
 as Fahrenheit), both idle and running. This scale remains an explicit assumption
 until compared with an independent thermometer. A successful poll cannot prove
 that the outdoor hardware refreshed its sensor while idle.
+
+
+## Adaptive local polling
+
+```json
+{
+  "updateInterval": 5,
+  "adaptivePolling": true
+}
+```
+
+Normal status checks run five seconds after the preceding check finishes, even
+when an AC is off. A control change detected from the remote/app, or a HomeKit
+command with a successful read-back, starts thirty seconds of two-second
+follow-ups. A subsequent control change renews that window. Temperature drift
+and usage counters do not keep the faster polling active. A remote's first
+change still has to wait for a normal poll; this is not a push subscription.
+
+Reads and writes use one operation queue per AC. Concurrent reads share one
+request, polls wait behind commands, and a fresh command read-back can satisfy
+waiting polls. In adaptive mode the cache lasts one second so it does not swallow
+the two-second checks. Timer actions retain their fresh-state checks and run on
+their own deadlines.
+
+Failed reads progressively wait 10, 20, 40 and then 60 seconds with the above
+five-second base interval. A successful read returns to normal polling; a
+confirmed HomeKit command can resume the follow-up window. Backoff still applies
+when the adapter temporarily serves its last good cached state. Cached state has
+a sixty-second grace period, after which the next unsuccessful read reports No
+Response. Offline recovery can therefore take up to the retry interval, plus
+request/discovery time. Normal commands are queued immediately, not postponed to
+the next scheduled poll. Only background retries are slowed.
+
+`adaptivePolling` defaults to false for existing configurations. A longer normal
+interval remains supported; backoff is capped at the greater of sixty seconds
+and that configured interval. There are no extra dependencies, persistent
+connections or cloud requests.
