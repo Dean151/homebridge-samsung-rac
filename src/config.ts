@@ -101,6 +101,8 @@ export interface NormalisedConfig {
   sharedOutdoorName: string;
   /** Optional local countdown switches; minutes, one countdown per AC. */
   shutdownTimers: number[];
+  /** Native TP6X Good Sleep default duration; null keeps the switch hidden. */
+  goodSleepMinutes: number | null;
   certificateUrl?: string;
 }
 
@@ -274,10 +276,22 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     detailedSwing: toBoolean(config.detailedSwing, 'detailedSwing', log),
     sharedOutdoorName: trimmed(config.sharedOutdoorName) || 'AC Outdoor Temperature',
     shutdownTimers: toShutdownTimers(config.shutdownTimers, log),
+    goodSleepMinutes: toGoodSleepMinutes(config.goodSleepMinutes, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
   };
+}
+
+function toGoodSleepMinutes(value: unknown, log: Logging): number | null {
+  if (value === undefined || value === 0) {
+    return null;
+  }
+  if (value === 60 || value === 120) {
+    return value;
+  }
+  log.warn('Ignoring goodSleepMinutes: the verified durations are 60 and 120 minutes.');
+  return null;
 }
 
 function toShutdownTimers(value: unknown, log: Logging): number[] {

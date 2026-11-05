@@ -308,6 +308,64 @@ export class DeviceAdapter {
     });
   }
 
+  /** Native sleep mode, verified on TP6X_RAC_17K. Never cancel with Sleep_0: it powers off. */
+  setGoodSleep(minutes: number | null): Promise<ApplyResult> {
+    if (minutes !== null && minutes !== 60 && minutes !== 120) {
+      return Promise.reject(new Error('Good Sleep supports the verified 60 or 120 minute durations.'));
+    }
+    this.queueVersion++;
+    return this.enqueue(async () => {
+      this.invalidate();
+      const before = await this.readStatus();
+      if (this.readFailures) {
+        throw new Error('A fresh AC status is required before changing Good Sleep.');
+      }
+      if (before.model !== 'TP6X_RAC_17K' || !/^\d+$/.test(before.options.Sleep ?? '')) {
+        throw new Error('Native Good Sleep has not been verified for this model.');
+      }
+      if (minutes !== null && (!before.active || before.mode !== 'Cool')) {
+        throw new Error('Turn the AC on in Cool mode before starting Good Sleep.');
+      }
+      if (minutes === null && before.comode !== 'Sleep') {
+        return { applied: true, requested: false, actual: false, status: before };
+      }
+      const requested = {
+        active: before.active, comode: minutes === null ? 'Off' : 'Sleep',
+        sleep: minutes === null ? '0' : String(minutes / 30),
+      };
+      // Stage the duration, enter Sleep, then set it explicitly while active.
+      // The first duration write is not necessarily visible until the mode is active.
+      // Keep the entire sequence in one queue slot so another control cannot split it.
+      const tokens = minutes === null
+        ? ['Comode_Off']
+        : [`Sleep_${minutes / 30}`, 'Comode_Sleep', `Sleep_${minutes / 30}`];
+      this.lastWrite = null;
+      for (const token of tokens) {
+        const remaining = this.minWriteIntervalMs - (Date.now() - this.lastWriteAt);
+        if (remaining > 0) {
+          await delay(remaining);
+        }
+        try {
+          await this.api.put(`/devices/${this.deviceId}/mode`, { Mode: { options: [token] } });
+        } finally {
+          this.lastWriteAt = Date.now();
+          this.invalidate();
+        }
+        await delay(this.settleMs);
+      }
+      const status = await this.readStatus();
+      if (this.readFailures) {
+        throw new Error('Could not confirm Good Sleep from a fresh status.');
+      }
+      const actual = { active: status.active, comode: status.comode, sleep: status.options.Sleep };
+      const applied = JSON.stringify(actual) === JSON.stringify(requested);
+      if (!applied) {
+        this.log.warn(`${this.label}: Good Sleep was not confirmed; requested ${JSON.stringify(requested)}, got ${JSON.stringify(actual)}.`);
+      }
+      return { applied, requested, actual, status };
+    });
+  }
+
   /** Resolve inside the queue so simultaneous axis changes preserve each other. */
   setSwingAxis(axis: 'vertical' | 'horizontal', on: boolean): Promise<ApplyResult> {
     const direction = (current: string | undefined) => {

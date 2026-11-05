@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2-local.7] - 2026-11-05
+
+### Added
+
+- Wind free (`Nano`), 2-Step and Comfort configuration choices verified on three
+  TP6X_RAC_17K units, with mutually exclusive preset states.
+- Optional native Good Sleep switch with verified one- or two-hour duration,
+  atomic command sequencing, fresh read-back and cancellation that keeps power on.
+- Good Sleep visibility limited to verified models, with startup restricted to
+  an already-running Cool mode.
+
+### Changed
+
+- Samsung labels: Fan, Fast Turbo, Purify, Vertical swing and Horizontal swing.
+- One-time migration of legacy default names while preserving service identities
+  and other user-assigned names.
+- Sleep duration changes trigger the adaptive polling follow-up window.
+
 ## [0.4.2-local.6] - 2026-11-04
 
 ### Added

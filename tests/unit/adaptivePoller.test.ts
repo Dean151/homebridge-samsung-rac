@@ -87,7 +87,7 @@ describe('adaptive polling', () => {
     expect(controlFingerprint({ ...state, currentTemperature: 21, options: { ...state.options, FilterTime: '21' } })).toBe(key);
     for (const update of [{ active: true }, { targetTemperature: 25 }, { mode: 'Wind' }, { speedLevel: 2 },
       { windDirection: 'All' }, { comode: 'Quiet' }, { options: { ...state.options, Spi: 'On' } },
-      { options: { ...state.options, Autoclean: 'On' } }]) {
+      { options: { ...state.options, Autoclean: 'On' } }, { options: { ...state.options, Sleep: '4' } }]) {
       expect(controlFingerprint({ ...state, ...update })).not.toBe(key);
     }
   });

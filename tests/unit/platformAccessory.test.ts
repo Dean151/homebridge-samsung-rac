@@ -81,6 +81,7 @@ async function build(options: {
     setComode: jest.fn(applied('Quiet')),
     setAutoClean: jest.fn(applied('On')),
     setSpi: jest.fn(applied('On')),
+    setGoodSleep: jest.fn(applied('Sleep')),
     setSwingAxis: jest.fn(applied('All')),
     invalidate: jest.fn(),
     close: jest.fn(),
@@ -107,6 +108,7 @@ async function build(options: {
     settings: {
       updateInterval: 3600,
       swingDirection: 'Up_And_Low',
+      goodSleepMinutes: null,
       ...options.settings,
       // Tests name modes as plain strings; the real config carries objects, so
       // an entry that wants a custom name can still be written out in full.
@@ -154,6 +156,69 @@ describe('SamsungRacAccessory', () => {
   afterEach(() => {
     jest.clearAllTimers();
     jest.useRealTimers();
+  });
+
+  describe('Samsung names and native Good Sleep', () => {
+    const get = (a: FakeAccessory, subtype: string) => a.getServiceById(Service.Switch, subtype);
+    const on = (a: FakeAccessory, subtype: string) => get(a, subtype)?.findCharacteristic(Characteristic.On);
+    const settings = { goodSleepMinutes: 60, convenienceModes: ['Nano', '2Step', 'Speed', 'Comfort', 'Quiet', 'Sleep'] };
+    const status = { model: 'TP6X_RAC_17K', options: { Sleep: '0' }, comode: 'Off' };
+
+    it('publishes one duration-aware Good Sleep switch with Samsung preset names', async () => {
+      const h = await build({ settings, status });
+      expect(get(h.accessory, 'comode-sleep')).toBeUndefined();
+      expect(get(h.accessory, 'comode-nano')?.displayName).toBe('Test AC Wind free');
+      expect(get(h.accessory, 'comode-2step')?.displayName).toBe('Test AC 2-Step');
+      expect(get(h.accessory, 'comode-speed')?.displayName).toBe('Test AC Fast Turbo');
+      await on(h.accessory, 'good-sleep')?.setHandler?.(true);
+      expect(h.adapter.setGoodSleep).toHaveBeenCalledWith(60);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(h.adapter.setMode).not.toHaveBeenCalled();
+    });
+
+    it('reflects the device mode regardless of duration, and cancels through the safe setter', async () => {
+      const h = await build({ settings, status: { ...status, comode: 'Sleep', options: { Sleep: '4' } } });
+      expect(on(h.accessory, 'good-sleep')?.getHandler?.()).toBe(true);
+      expect(on(h.accessory, 'comode-comfort')?.getHandler?.()).toBe(false);
+      await on(h.accessory, 'good-sleep')?.setHandler?.(false);
+      expect(h.adapter.setGoodSleep).toHaveBeenCalledWith(null);
+      h.setStatus({ comode: 'Comfort', options: { Sleep: '0' } });
+      await pollOnce(h.adapter.getStatus);
+      expect(on(h.accessory, 'good-sleep')?.getHandler?.()).toBe(false);
+      expect(on(h.accessory, 'comode-comfort')?.getHandler?.()).toBe(true);
+      h.adapter.setGoodSleep.mockClear();
+      await on(h.accessory, 'good-sleep')?.setHandler?.(false);
+      expect(h.adapter.setGoodSleep).not.toHaveBeenCalled();
+    });
+
+    it('hides unsupported Good Sleep and removes it when disabled without replacing the AC', async () => {
+      expect(on((await build({ settings })).accessory, 'good-sleep')).toBeUndefined();
+      const h = await build({ settings, status });
+      expect(on(h.accessory, 'good-sleep')).toBeDefined();
+      h.stop();
+      await build({ accessory: h.accessory, status });
+      expect(on(h.accessory, 'good-sleep')).toBeUndefined();
+      expect(h.accessory.getService(Service.HeaterCooler)).toBe(h.heaterCooler);
+    });
+
+    it('migrates legacy names once in place and preserves later or custom Home names', async () => {
+      const cached = new FakeAccessory();
+      cached.context.serviceNames = { 'mode-wind': 'Fan Only', 'comode-speed': 'Speed',
+        'setting-spi': 'My purifier', 'swing-horizontal': 'Test AC Swing Left Right' };
+      const config = { modeSwitches: ['Wind'], convenienceModes: ['Speed'], spiSwitch: true, detailedSwing: true };
+      const first = await build({ accessory: cached, settings: config, status: { comode: 'Off', options: { Spi: 'Off' } } });
+      const fan = get(cached, 'mode-wind');
+      const name = (key: string) => get(cached, key)?.findCharacteristic(Characteristic.ConfiguredName)?.value;
+      expect(name('mode-wind')).toBe('Fan');
+      expect(name('comode-speed')).toBe('Fast Turbo');
+      expect(name('setting-spi')).toBe('My purifier');
+      expect(name('swing-horizontal')).toBe('Test AC Horizontal swing');
+      await fan?.findCharacteristic(Characteristic.ConfiguredName)?.setHandler?.('Fan Only');
+      first.stop();
+      await build({ accessory: cached, settings: config, status: { comode: 'Off', options: { Spi: 'Off' } } });
+      expect(get(cached, 'mode-wind')).toBe(fan);
+      expect(name('mode-wind')).toBe('Fan Only');
+    });
   });
 
   describe('detailed swing and SPI switches', () => {
@@ -1076,14 +1141,14 @@ describe('SamsungRacAccessory', () => {
       });
 
       it('beats the tidied-up label the plugin would otherwise pick', async () => {
-        // Wind reads as 'Fan Only' by default; an explicit name outranks it.
+        // Wind reads as 'Fan' by default; an explicit name outranks it.
         const { accessory } = await build({
           settings: { modeSwitches: [{ value: 'Wind', name: 'Ventilation' }] },
         });
 
         expect(switches(accessory)
           .map((service) => service.findCharacteristic(Characteristic.ConfiguredName)?.value))
-          .not.toContain('Test AC Fan Only');
+          .not.toContain('Test AC Fan');
       });
 
       it('leaves an unnamed entry on the derived name, so two units stay apart', async () => {
@@ -1285,7 +1350,7 @@ describe('SamsungRacAccessory', () => {
 
       // The unit calls it Wind; a tile called "Wind" would not tell anyone what
       // it does, and the Home app can still rename it.
-      expect(accessory.getServiceById(Service.Switch, 'mode-wind')?.displayName).toBe('Test AC Fan Only');
+      expect(accessory.getServiceById(Service.Switch, 'mode-wind')?.displayName).toBe('Test AC Fan');
 
       await on(accessory.getServiceById(Service.Switch, 'mode-dry'))?.setHandler?.(true);
       expect(adapter.setMode).toHaveBeenCalledWith('Dry');

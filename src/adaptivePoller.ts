@@ -4,7 +4,7 @@ import type { RacStatus } from './racStatus';
 export function controlFingerprint(status: RacStatus): string {
   return JSON.stringify([
     status.active, status.mode, status.targetTemperature, status.speedLevel,
-    status.windDirection, status.comode, status.options.Autoclean, status.options.Spi,
+    status.windDirection, status.comode, status.options.Autoclean, status.options.Spi, status.options.Sleep,
   ]);
 }
 

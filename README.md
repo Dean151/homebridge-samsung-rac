@@ -317,8 +317,8 @@ Measured on a TP6X_RAC_16K, 2026-09-15:
 | Sleep timer (`Sleep`) | not applied |
 | `Mode.options` body | one entry at a time — `{"Mode":{"options":["Comode_Quiet"]}}`. The whole array echoed back is rejected |
 
-The last three rows are **not in the Home app yet**: `HeaterCooler` has nowhere
-to put a convenience mode, so exposing it needs an accessory of its own.
+These are the original TP6X_RAC_16K probe results. Optional switches now expose
+verified presets and Auto Clean; see the TP6X_RAC_17K additions below for native Good Sleep.
 
 Consequence worth knowing: **changing anything in the Home app while the unit is
 off does nothing**, and the tile will snap back after a second. Turn it on first.
@@ -337,7 +337,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
   ],
   "updateInterval": 10,
   "swingDirection": "Up_And_Low",
-  "convenienceModes": [{ "mode": "Quiet", "name": "WindFree" }],
+  "convenienceModes": [{ "mode": "Quiet" }],
   "modeSwitches": [{ "mode": "Dry" }],
   "outdoorTemperature": "linked",
   "outdoorTemperatureUnit": "fahrenheit",
@@ -355,8 +355,9 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `devices[].heating` | `auto` | `on` or `off` to override whether Heat is offered. `auto` reads it from the unit, which is right for every unit seen so far. |
 | `updateInterval` | `10` | Seconds between polls; minimum 5. |
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
-| `convenienceModes` | none | `Comode` values to publish a switch for, as `"Quiet"` or `{ "mode": "Quiet", "name": "WindFree" }`. One runs at a time, so the switches act as one group. |
+| `convenienceModes` | none | `Comode` values to publish a switch for, as `"Quiet"` or `{ "mode": "Speed", "name": "Fast Turbo" }`. One runs at a time, so the switches act as one group. |
 | `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind`, the two HomeKit's air conditioner tile cannot express. Same two shapes. |
+| `goodSleepMinutes` | `0` (disabled) | Native Good Sleep switch for verified TP6X_RAC_17K units: `60` or `120` minutes. Start with the AC running in Cool mode. |
 | `autoCleanSwitch` | `false` | Expose Auto Clean when the unit reports `Autoclean_On` or `Autoclean_Off`. This is an enabled setting, not a cleaning-in-progress indicator. |
 | `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
@@ -395,7 +396,7 @@ reference unit.
 The `0.4.2-local.3` preview retains UUID discovery and adds an opt-in Auto Clean
 switch. Use `"autoCleanSwitch": true` with
 `"modeSwitches": [{"mode":"Dry"}, {"mode":"Wind"}]` to expose all three controls.
-Dry and Fan Only select an operating mode; the main AC tile controls power.
+Dry and Fan select an operating mode; the main AC tile controls power.
 Turning a mode switch off returns to the last ordinary mode (or Cool as fallback).
 Auto Clean is independent of those modes and continues to read enabled while the
 unit is off. Some firmware accepts setting changes only while powered on. Every
@@ -434,7 +435,7 @@ discarded rather than shutting down a possibly new session hours later. Each
 attempt reads the AC first and confirms the resulting off state. Power cycles
 that happen entirely while Homebridge is offline cannot be detected.
 
-Quiet and Speed use the existing `convenienceModes` setting:
+Quiet and Fast Turbo use the existing `convenienceModes` setting:
 `[{"mode":"Quiet"}, {"mode":"Speed"}]`. Both values were confirmed by local
 read-back on all three TP6X_RAC_17K units in Cool mode on 2026-11-04. This confirms
 the setting, not a measured acoustic or cooling-performance change, and does not
@@ -473,7 +474,7 @@ power the AC on; firmware may ignore changes while it is off. All four direction
 values were confirmed by read-back on three TP6X_RAC_17K units in fan-only mode.
 Other model families can accept fewer directions, so this remains opt-in.
 
-**SPI:** The switch reflects the Samsung `Spi_On` / `Spi_Off` setting, including
+**Purify (SPI):** The switch reflects the Samsung `Spi_On` / `Spi_Off` setting, including
 its retained value while the AC is off. Both values were confirmed by local
 read-back on all three tested units. This verifies the setting, not the presence
 or output of ionizer hardware; no air-quality measurement is implied.
@@ -528,3 +529,65 @@ the next scheduled poll. Only background retries are slowed.
 interval remains supported; backoff is capped at the greater of sixty seconds
 and that configured interval. There are no extra dependencies, persistent
 connections or cloud requests.
+
+
+## Samsung controls on TP6X_RAC_17K
+
+Local read-back tests on three TP6X_RAC_17K units confirmed the following
+controls. Wind free and Good Sleep were also matched against SmartThings on
+the Office AC. These protocol model results do not establish support on every
+Samsung retail model.
+
+| Home name | Local option |
+|---|---|
+| Wind free | `Comode_Nano` |
+| 2-Step | `Comode_2Step` |
+| Fast Turbo | `Comode_Speed` |
+| Comfort | `Comode_Comfort` |
+| Quiet | `Comode_Quiet` |
+| Purify | `Spi_On` / `Spi_Off` |
+| Good Sleep | `Comode_Sleep` with `Sleep_2` for one hour or `Sleep_4` for two hours |
+
+```json
+{
+  "convenienceModes": [
+    { "mode": "Nano", "name": "Wind free" },
+    { "mode": "2Step", "name": "2-Step" },
+    { "mode": "Speed", "name": "Fast Turbo" },
+    { "mode": "Comfort", "name": "Comfort" },
+    { "mode": "Quiet", "name": "Quiet" }
+  ],
+  "modeSwitches": [{ "mode": "Dry", "name": "Dry" }, { "mode": "Wind", "name": "Fan" }],
+  "goodSleepMinutes": 60,
+  "spiSwitch": true,
+  "detailedSwing": true
+}
+```
+
+Good Sleep is one switch with a default duration chosen in Homebridge settings.
+Start it while the AC is running in Cool mode. The switch also reflects Good
+Sleep started from SmartThings, even with a different duration. It stays on
+while the AC reports active sleep mode. A configured legacy `Sleep` preset
+switch is suppressed when this duration-aware control is enabled.
+
+Starting stages the duration, enters Sleep, then explicitly reapplies the
+duration while Sleep is active. The sequence shares the device write queue
+and is confirmed with a fresh read. Cancelling sends `Comode_Off`, preserving
+power. **Do not cancel with `Sleep_0`: these units turn off immediately.**
+One- and two-hour settings and cancellation were verified; a complete sleep
+cycle and automatic expiry have not been observed. Other durations and base
+modes are deliberately unavailable until tested.
+
+The AC owns Good Sleep timing. The existing **Off in …** switches are separate
+countdowns that Homebridge owns. Avoid scheduling both when you want the full
+Good Sleep cycle.
+
+Apple Home's HeaterCooler mode picker is fixed to Auto, Heat and Cool, with
+power separate. Fan and Dry cannot be added as custom picker entries, so they
+remain separate switches. They select a base mode; the main AC tile controls
+power. Presets are mutually exclusive and reflect the AC's current state.
+
+Existing service subtypes and accessory UUIDs are retained. Legacy default
+names migrate once to Fan, Fast Turbo, Purify, Vertical swing and Horizontal
+swing; other custom Home names remain intact. New custom names survive future
+restarts, including a deliberate return to an old label.

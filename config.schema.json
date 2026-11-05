@@ -112,7 +112,7 @@
       "convenienceModes": {
         "title": "Convenience mode switches",
         "type": "array",
-        "description": "Adds a switch to the Home app for each convenience mode you add \u2014 the family WindFree belongs to. None are added by default: the unit reports the mode it is in but never the ones it would accept, so there is nothing to detect from, and a switch for a name your model does not know would refuse to stay on. The six offered here are the ones a TP6X_RAC_16K applies, confirmed by read-back. Only one convenience mode runs at a time, so switching one on switches the others off. Which of them your unit calls WindFree is not something it says \u2014 try them, then give the one that is it a name.",
+        "description": "Adds switches for selected presets. Only one runs at a time. TP6X_RAC_17K units were verified with Nano (Wind free), 2Step, Speed (Fast Turbo), Comfort and Quiet. Other models may use different values. Use the separate Good Sleep duration setting for native timed sleep control.",
         "items": {
           "type": "object",
           "properties": {
@@ -122,6 +122,12 @@
               "required": true,
               "default": "Quiet",
               "oneOf": [
+                {
+                  "title": "Wind free (TP6X_RAC_17K)",
+                  "enum": [
+                    "Nano"
+                  ]
+                },
                 {
                   "title": "Comfort",
                   "enum": [
@@ -135,7 +141,7 @@
                   ]
                 },
                 {
-                  "title": "Speed",
+                  "title": "Fast Turbo",
                   "enum": [
                     "Speed"
                   ]
@@ -147,13 +153,13 @@
                   ]
                 },
                 {
-                  "title": "2Step",
+                  "title": "2-Step",
                   "enum": [
                     "2Step"
                   ]
                 },
                 {
-                  "title": "Sleep",
+                  "title": "Sleep (legacy mode only)",
                   "enum": [
                     "Sleep"
                   ]
@@ -164,7 +170,7 @@
             "name": {
               "title": "Name in the Home app",
               "type": "string",
-              "description": "Optional. Used exactly as you write it, with no air conditioner name in front of it \u2014 call the one your unit uses for WindFree 'WindFree' and that is what the tile reads. Leave it empty for '<air conditioner> <mode>', which is what tells two units' Quiet switches apart."
+              "description": "Optional. Used exactly as written, without the AC name in front. Leave empty for the AC name followed by the Samsung preset name."
             }
           }
         }
@@ -308,13 +314,13 @@
         "title": "Separate swing axes",
         "type": "boolean",
         "default": false,
-        "description": "Adds Up Down and Left Right switches. Both on selects All; both off selects Fix. Enable only after confirming all four directions on your model. Changes do not power on the AC."
+        "description": "Adds Vertical swing and Horizontal swing switches. Both on selects All; both off selects Fix. Enable only after confirming all four directions on your model. Changes do not power on the AC."
       },
       "spiSwitch": {
-        "title": "SPI switch",
+        "title": "Purify switch",
         "type": "boolean",
         "default": false,
-        "description": "Adds Samsung SPI (S-Plasma Ion) on/off when reported by the AC. Enable only after checking command support. The switch reflects the setting, not measured air quality or confirmation that ionizer hardware is installed."
+        "description": "Adds the Samsung Purify control using SPI (S-Plasma Ion) on/off when reported by the AC. Enable only after checking command support. The switch reflects the setting, not measured air quality or confirmation that ionizer hardware is installed."
       },
       "sharedOutdoorName": {
         "title": "Shared outdoor sensor name",
@@ -329,6 +335,32 @@
         "type": "boolean",
         "default": false,
         "description": "After a control change or HomeKit command, poll every 2 seconds for 30 seconds. Otherwise use the normal interval, even while off. Failed reads back off progressively to at least 60 seconds; successful reads restore normal polling. Polls never overlap and share the command read-back."
+      },
+      "goodSleepMinutes": {
+        "title": "Good Sleep duration",
+        "type": "integer",
+        "default": 0,
+        "oneOf": [
+          {
+            "title": "Disabled",
+            "enum": [
+              0
+            ]
+          },
+          {
+            "title": "1 hour",
+            "enum": [
+              60
+            ]
+          },
+          {
+            "title": "2 hours",
+            "enum": [
+              120
+            ]
+          }
+        ],
+        "description": "Adds one native Good Sleep switch on verified TP6X_RAC_17K units. Start while running in Cool mode. Switching it off cancels Good Sleep and keeps the AC running. The duration is handled by the AC; it differs from the local shutoff timers."
       }
     }
   },
@@ -369,6 +401,7 @@
     },
     "autoCleanSwitch",
     "spiSwitch",
+    "goodSleepMinutes",
     {
       "key": "shutdownTimers",
       "type": "array",
