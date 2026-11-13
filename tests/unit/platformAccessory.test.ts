@@ -78,6 +78,7 @@ async function build(options: {
     setSpeedLevel: jest.fn(applied(2)),
     setWindDirection: jest.fn(applied('Up_And_Low')),
     setComode: jest.fn(applied('Quiet')),
+    setAutoClean: jest.fn(applied('On')),
     close: jest.fn(),
   };
 
@@ -1125,6 +1126,33 @@ describe('SamsungRacAccessory', () => {
 
       await on(accessory.getServiceById(Service.Switch, 'mode-dry'))?.setHandler?.(true);
       expect(adapter.setMode).toHaveBeenCalledWith('Dry');
+    });
+
+    it('keeps Auto-clean enabled while powered off and does not alter modes or power', async () => {
+      const { accessory, adapter } = await build({
+        status: { active: false, options: { Autoclean: 'On' }, mode: 'Dry' },
+        settings: { autoCleanSwitch: true, modeSwitches: ['Dry'] },
+      });
+      const clean = accessory.getServiceById(Service.Switch, 'setting-autoclean');
+      expect(on(clean)?.getHandler?.()).toBe(true);
+      await on(clean)?.setHandler?.(false);
+      expect(adapter.setAutoClean).toHaveBeenCalledWith(false);
+      expect(adapter.setPower).not.toHaveBeenCalled();
+      expect(adapter.setMode).not.toHaveBeenCalled();
+      expect(on(accessory.getServiceById(Service.Switch, 'mode-dry'))?.value).toBe(true);
+    });
+
+    it('publishes Auto-clean only when enabled in config and the unit reports On or Off', async () => {
+      for (const value of [undefined, 'Unknown', 'Off']) {
+        const { accessory } = await build({
+          status: { options: value ? { Autoclean: value } : {} }, settings: { autoCleanSwitch: true },
+        });
+        expect(Boolean(accessory.getServiceById(Service.Switch, 'setting-autoclean'))).toBe(value === 'Off');
+      }
+      const cached = new FakeAccessory();
+      cached.addService(Service.Switch, 'Auto Clean', 'setting-autoclean');
+      const { accessory } = await build({ accessory: cached, status: { options: { Autoclean: 'On' } } });
+      expect(accessory.getServiceById(Service.Switch, 'setting-autoclean')).toBeUndefined();
     });
 
     it('returns to the mode the unit was in before, when a mode switch goes off', async () => {
