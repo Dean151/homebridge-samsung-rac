@@ -353,3 +353,14 @@ npm run watch    # rebuild and restart Homebridge on change
 Unit tests never touch the network: `nock` is locked down and `fetch` is replaced
 outright. The fixture in `tests/fixtures/devices.json` is a real capture from the
 reference unit.
+
+
+## Auto Clean
+
+Auto Clean is an opt-in switch. Use `"autoCleanSwitch": true` with
+`"modeSwitches": [{"mode":"Dry"}, {"mode":"Wind"}]` to expose all three controls.
+Dry and Fan select an operating mode; the main AC tile controls power.
+Turning a mode switch off returns to the last ordinary mode (or Cool as fallback).
+Auto Clean is independent of those modes and continues to read enabled while the
+unit is off. Some firmware accepts setting changes only while powered on. Every
+write is confirmed by a status read; a rejected setting returns to the actual value.

@@ -32,7 +32,7 @@ const switchLabels: Record<string, string> = {
 };
 
 /** Subtype prefixes for the switches this plugin owns, so it only removes its own. */
-const switchSubtypes = { comode: 'comode-', mode: 'mode-' } as const;
+const switchSubtypes = { comode: 'comode-', mode: 'mode-', autoClean: 'setting-autoclean' } as const;
 
 /**
  * What to call a switch in the log, and the tail of its HomeKit name when the
@@ -55,7 +55,7 @@ interface ModeSwitch {
   /** Stable, and the HomeKit subtype: it is what carries the user's automations. */
   subtype: string;
   /** Which field this switch is backed by, and so which switches it excludes. */
-  group: 'comode' | 'mode';
+  group: 'comode' | 'mode' | 'autoclean';
   /** Short, for the log. */
   label: string;
   /** What the Home app shows, unless the user has since renamed it there. */
@@ -532,6 +532,19 @@ export class SamsungRacAccessory {
   private modeSwitchSpecs(): ModeSwitch[] {
     const specs: ModeSwitch[] = [];
 
+    if (this.platform.settings.autoCleanSwitch) {
+      specs.push({
+        subtype: switchSubtypes.autoClean,
+        group: 'autoclean',
+        label: 'Auto Clean',
+        displayName: `${this.accessory.displayName} Auto Clean`,
+        available: (status) => ['On', 'Off'].includes(status.options.Autoclean),
+        // Enabled after shutdown does not mean a cleaning cycle is running.
+        isOn: (status) => status.options.Autoclean === 'On',
+        write: (on) => () => this.adapter.setAutoClean(on),
+      });
+    }
+
     for (const entry of this.platform.settings.convenienceModes) {
       const name = entry.value;
       specs.push({
@@ -608,7 +621,8 @@ export class SamsungRacAccessory {
     // touched, hence the subtype prefixes.
     for (const service of [...this.accessory.services]) {
       const subtype = service.subtype ?? '';
-      const ours = subtype.startsWith(switchSubtypes.comode) || subtype.startsWith(switchSubtypes.mode);
+      const ours = subtype.startsWith(switchSubtypes.comode) || subtype.startsWith(switchSubtypes.mode)
+        || subtype === switchSubtypes.autoClean;
       if (service.UUID === this.platform.Service.Switch.UUID && ours && !wanted.has(subtype)) {
         this.platform.log.info(`${this.accessory.displayName}: removing the switch for '${subtype}'.`);
         this.accessory.removeService(service);

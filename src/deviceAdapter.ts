@@ -253,6 +253,18 @@ export class DeviceAdapter {
     });
   }
 
+  /** A persistent setting, independent of the selected operating mode. */
+  setAutoClean(on: boolean): Promise<ApplyResult> {
+    const value = on ? 'On' : 'Off';
+    return this.applyChange({
+      field: 'Mode.options.Autoclean',
+      resource: `/devices/${this.deviceId}/mode`,
+      body: { Mode: { options: [`Autoclean_${value}`] } },
+      requested: value,
+      read: (status) => status.options.Autoclean,
+    });
+  }
+
   // --- the write path ------------------------------------------------------
 
   private applyChange(change: Change): Promise<ApplyResult> {

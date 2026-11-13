@@ -159,6 +159,12 @@
         "default": 5,
         "minimum": 1
       },
+      "autoCleanSwitch": {
+        "title": "Auto-clean switch",
+        "type": "boolean",
+        "default": false,
+        "description": "Show the self-drying setting when the AC reports Autoclean. On means enabled after shutdown, not cleaning now. Some units accept setting changes only while powered on."
+      },
       "certificateUrl": {
         "title": "Client certificate URL",
         "type": "string",
@@ -191,6 +197,7 @@
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
     "freezeIndoorTemperatureWhenOff",
+    "autoCleanSwitch",
     {
       "type": "fieldset",
       "title": "Advanced",

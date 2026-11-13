@@ -95,6 +95,24 @@ describe('debug logging', () => {
 });
 
 describe('reads', () => {
+  it('writes only Auto-clean and confirms the setting without disturbing other options', async () => {
+    const { adapter, put, document, applyWrites } = build();
+    document.Mode!.options = ['Comode_Quiet', 'Autoclean_Off'];
+    applyWrites((body, doc) => {
+      doc.Mode!.options = ['Comode_Quiet', body.Mode.options[0]];
+    });
+    await expect(adapter.setAutoClean(true)).resolves.toMatchObject({ applied: true, actual: 'On' });
+    expect(put).toHaveBeenLastCalledWith('/devices/0/mode', { Mode: { options: ['Autoclean_On'] } });
+    expect(document.Mode!.options).toEqual(['Comode_Quiet', 'Autoclean_On']);
+    await expect(adapter.setAutoClean(false)).resolves.toMatchObject({ applied: true, actual: 'Off' });
+  });
+
+  it('does not treat HTTP success as an applied Auto-clean change', async () => {
+    const { adapter, document } = build();
+    document.Mode!.options = ['Autoclean_Off'];
+    await expect(adapter.setAutoClean(true)).resolves.toMatchObject({ applied: false, actual: 'Off' });
+  });
+
   it('parses the device the unit reports', async () => {
     const { adapter } = build();
     await expect(adapter.getStatus()).resolves.toMatchObject({ mode: 'Cool', active: true, maxSpeedLevel: 4 });
