@@ -8,6 +8,12 @@ function logger() {
 }
 
 describe('normaliseConfig', () => {
+  it('enables a shared multisplit sensor explicitly', () => {
+    const config = normaliseConfig({ platform: 'x', outdoorTemperature: 'shared', outdoorTemperatureUnit: 'fahrenheit',
+      sharedOutdoorName: 'Outside' } as never, logger() as never);
+    expect(config).toMatchObject({ outdoorTemperaturePlacement: 'shared', outdoorTemperatureUnit: 'F', sharedOutdoorName: 'Outside' });
+  });
+
   it('fills in the defaults', () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

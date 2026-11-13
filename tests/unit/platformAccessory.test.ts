@@ -30,6 +30,7 @@ const baseStatus: RacStatus = {
 };
 
 interface Harness {
+  stop: () => void;
   accessory: FakeAccessory;
   heaterCooler: FakeService;
   adapter: Record<string, jest.Mock>;
@@ -93,6 +94,7 @@ async function build(options: {
     Service,
     Characteristic,
     log,
+    reportOutdoorTemperature: jest.fn(),
     api: {
       hap: { HapStatusError: FakeHapStatusError, HAPStatus },
       updatePlatformAccessories: jest.fn(),
@@ -110,11 +112,12 @@ async function build(options: {
     },
   };
 
-  await SamsungRacAccessory.create(
+  const instance = await SamsungRacAccessory.create(
     platform as never, accessory as never, adapter as never, outdoor as never,
   );
 
   return {
+    stop: () => instance.stop(),
     accessory,
     heaterCooler: accessory.getService(Service.HeaterCooler) as FakeService,
     adapter: adapter as unknown as Record<string, jest.Mock>,
@@ -147,6 +150,18 @@ describe('SamsungRacAccessory', () => {
   afterEach(() => {
     jest.clearAllTimers();
     jest.useRealTimers();
+  });
+
+  describe('shared outdoor placement', () => {
+    it('removes a cached per-AC outdoor sensor in shared mode and never recreates it on polls', async () => {
+      const h = await build({ status: { outdoorTemperature: 18 } });
+      expect(h.accessory.getService(Service.TemperatureSensor)).toBeDefined();
+      h.stop();
+      const shared = await build({ accessory: h.accessory, settings: { outdoorTemperaturePlacement: 'shared' }, status: { outdoorTemperature: 18 } });
+      expect(shared.accessory.getService(Service.TemperatureSensor)).toBeUndefined();
+      await pollOnce(shared.adapter.getStatus);
+      expect(shared.accessory.getService(Service.TemperatureSensor)).toBeUndefined();
+    });
   });
 
   describe('temperature', () => {

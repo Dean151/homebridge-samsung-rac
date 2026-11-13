@@ -339,3 +339,14 @@ describe('a unit configured in Fahrenheit', () => {
     expect(result).toMatchObject({ applied: true, actual: 22 });
   });
 });
+
+describe('outdoor observation freshness', () => {
+  it('does not advance the observation timestamp when a failed read returns cached status', async () => {
+    const h = build();
+    await h.adapter.getStatus();
+    const first = h.adapter.lastSuccessfulReadAt;
+    h.get.mockRejectedValue(new Error('offline'));
+    await h.adapter.getStatus();
+    expect(h.adapter.lastSuccessfulReadAt).toBe(first);
+  });
+});

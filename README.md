@@ -323,7 +323,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
 | `convenienceModes` | none | `Comode` values to publish a switch for, as `"Quiet"` or `{ "mode": "Quiet", "name": "WindFree" }`. One runs at a time, so the switches act as one group. |
 | `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind`, the two HomeKit's air conditioner tile cannot express. Same two shapes. |
-| `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
+| `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `shared` for one multisplit sensor; `off` to hide it. |
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
 | `hideOutdoorTemperatureWhenOff` | `false` | Stop reporting the outdoor tile while the unit is off, for units whose reading is only trustworthy when running. |
 | `freezeIndoorTemperatureWhenOff` | `false` | Hold the room temperature at its last running value while the unit is off, for units whose reading is only trustworthy when running. |
@@ -353,3 +353,29 @@ npm run watch    # rebuild and restart Homebridge on change
 Unit tests never touch the network: `nock` is locked down and `fetch` is replaced
 outright. The fixture in `tests/fixtures/devices.json` is a real capture from the
 reference unit.
+
+
+## One shared outdoor temperature sensor
+
+Set `"outdoorTemperature": "shared"` and optionally `"sharedOutdoorName": "Outside"`.
+Keep `outdoorTemperatureUnit` set for your hardware; the default is Fahrenheit.
+
+Only use `shared` when every AC in this platform belongs to the same outdoor unit.
+It does not infer shared hardware merely because temperatures happen to match.
+The accessory has a stable identity independent of source IPs and can be assigned
+to an outdoor room in Apple Home. Existing per-AC outdoor sensors are removed when
+all devices are reachable; AC identities and pairing are retained.
+
+**Outdoor temperature:** Existing AC polls feed one shared sensor. Prefer a fresh
+reading from a running indoor unit, otherwise use the first available source;
+never average duplicate readings. A source expires after 60 seconds (or three
+poll intervals if longer), using the last successful LAN read time rather than
+the time a cached response was returned. If every source expires, HomeKit reports
+No Response. Recovery reuses the same accessory. With `hideOutdoorTemperatureWhenOff`
+enabled, only running indoor units supply the sensor.
+
+The outdoor field has no unit label. Fahrenheit is documented for the related
+TP6X_RAC_16K; the tested 17K units all reported raw `65` (18.3°C when interpreted
+as Fahrenheit), both idle and running. This scale remains an explicit assumption
+until compared with an independent thermometer. A successful poll cannot prove
+that the outdoor hardware refreshed its sensor while idle.

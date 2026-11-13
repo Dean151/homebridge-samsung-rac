@@ -429,6 +429,9 @@ export class SamsungRacAccessory {
   }
 
   private hasOutdoorReading(): boolean {
+    if (this.platform.settings.outdoorTemperaturePlacement === 'shared') {
+      return false;
+    }
     return Number.isFinite(this.status.outdoorTemperature);
   }
 
@@ -489,6 +492,7 @@ export class SamsungRacAccessory {
     const service = existing ?? host.addService(this.platform.Service.TemperatureSensor);
     this.nameService(host, service, 'outdoor', `${this.accessory.displayName} Outdoor`);
     service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+      .setProps({ minValue: -100, maxValue: 100, minStep: 0.1 })
       .onGet(this.getOutdoorTemperature.bind(this));
 
     // Deliberately NOT linked to the HeaterCooler, unlike the filter. A linked
@@ -1115,6 +1119,9 @@ export class SamsungRacAccessory {
 
   private markUnresponsive(reason: string): void {
     this.responsive = false;
+    if (this.platform.settings.outdoorTemperaturePlacement === 'shared') {
+      this.platform.reportOutdoorTemperature(this.accessory.UUID);
+    }
 
     if (this.loggedOffline) {
       this.platform.log.debug(`${this.accessory.displayName}: still not responding: ${reason}`);
@@ -1140,6 +1147,10 @@ export class SamsungRacAccessory {
 
     if (!this.responsive) {
       return;
+    }
+
+    if (this.platform.settings.outdoorTemperaturePlacement === 'shared') {
+      this.platform.reportOutdoorTemperature(this.accessory.UUID, this.status, this.adapter.lastSuccessfulReadAt);
     }
 
     try {

@@ -124,7 +124,7 @@ export class DeviceAdapter {
       const status = toRacStatus(device, this.statusOptions);
       this.logStatusChange(status);
       this.cached = status;
-      this.cachedAt = now;
+      this.cachedAt = Date.now();
       return this.cached;
     } catch (error) {
       // Serving a slightly stale reading beats flapping the accessory on one
@@ -146,6 +146,11 @@ export class DeviceAdapter {
 
   close(): void {
     this.api.close();
+  }
+
+  /** Timestamp of the last successful LAN read; cached fallback must not renew freshness. */
+  get lastSuccessfulReadAt(): number {
+    return this.cachedAt;
   }
 
   // --- semantic writes -----------------------------------------------------

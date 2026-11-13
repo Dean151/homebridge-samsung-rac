@@ -37,7 +37,7 @@ export interface ModeSwitchConfig {
 }
 
 /** 'linked' hangs the sensor off the air conditioner; 'separate' gives it its own accessory. */
-export type OutdoorTemperaturePlacement = 'linked' | 'separate';
+export type OutdoorTemperaturePlacement = 'linked' | 'separate' | 'shared';
 
 export interface NormalisedConfig {
   devices: DeviceConfig[];
@@ -89,6 +89,7 @@ export interface NormalisedConfig {
    * the Samsung app; the plugin reports them as Auto and leaves them alone.
    */
   modeSwitches: ModeSwitchConfig[];
+  sharedOutdoorName: string;
   certificateUrl?: string;
 }
 
@@ -118,6 +119,9 @@ function toOutdoorPlacement(value: unknown, log: Logging): OutdoorTemperaturePla
   }
   if (raw === 'off' || raw === 'none' || raw === 'false') {
     return null;
+  }
+  if (raw === 'shared') {
+    return 'shared';
   }
   if (raw === 'separate' || raw === 'accessory' || raw === 'device') {
     return 'separate';
@@ -239,6 +243,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       config.freezeIndoorTemperatureWhenOff, 'freezeIndoorTemperatureWhenOff', log),
     convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
+    sharedOutdoorName: trimmed(config.sharedOutdoorName) || 'AC Outdoor Temperature',
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,

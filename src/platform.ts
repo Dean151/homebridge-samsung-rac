@@ -4,11 +4,12 @@ import type {
 import { normaliseConfig, NormalisedConfig } from './config';
 import { DeviceAdapter } from './deviceAdapter';
 import { SamsungRacAccessory } from './platformAccessory';
-import { devicesFrom, RacDeviceDocument, RacDevicesResponse } from './racStatus';
+import { devicesFrom, RacDeviceDocument, RacDevicesResponse, RacStatus } from './racStatus';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { CertificateStore } from './transport/certificate';
 import { LocalApi, TokenInvalidError } from './transport/localApi';
 import { TokenStore } from './transport/tokenStore';
+import { SharedOutdoorTemperature } from './sharedOutdoorTemperature';
 
 interface AccessoryContext {
   host: string;
@@ -46,6 +47,10 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
   private readonly certificates: CertificateStore;
   private readonly tokens: TokenStore;
 
+  private shuttingDown = false;
+  private readonly sharedOutdoor?: SharedOutdoorTemperature;
+  private sharedOutdoorAccessory?: PlatformAccessory;
+
   constructor(
     readonly log: Logging,
     config: PlatformConfig,
@@ -54,6 +59,13 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
     this.settings = normaliseConfig(config, log);
+    if (this.settings.outdoorTemperaturePlacement === 'shared') {
+      this.sharedOutdoor = new SharedOutdoorTemperature(
+        Math.max(60000, this.settings.updateInterval * 3000),
+        this.settings.hideOutdoorTemperatureWhenOff,
+        () => this.pushSharedOutdoor(),
+      );
+    }
 
     const storagePath = api.user.storagePath();
     this.certificates = new CertificateStore({ storagePath, url: this.settings.certificateUrl });
@@ -74,6 +86,8 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     });
 
     this.api.on('shutdown', () => {
+      this.shuttingDown = true;
+      this.sharedOutdoor?.stop();
       for (const handler of this.handlers) {
         try {
           handler.stop();
@@ -107,6 +121,7 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
       return;
     }
 
+    this.pushSharedOutdoor();
     const liveUuids = new Set<string>();
     let allReachable = true;
 
@@ -177,7 +192,7 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     // conditioner being unplugged at restart would delete its HomeKit tile,
     // taking the user's automations and room assignment with it.
     if (allReachable) {
-      this.removeStaleAccessories(liveUuids);
+      this.removeStaleAccessories(new Set([...liveUuids, ...this.published]));
     } else if (this.cachedAccessories.some((accessory) => !liveUuids.has(accessory.UUID))) {
       this.log.info('Keeping cached accessories for units that did not answer; nothing was removed.');
     }
@@ -284,6 +299,70 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
         }
       },
     };
+  }
+
+  /** Existing AC polls supply the shared sensor; no extra network polling. */
+  reportOutdoorTemperature(source: string, status?: RacStatus, observedAt?: number): void {
+    this.sharedOutdoor?.update(source, status, observedAt);
+  }
+
+  private pushSharedOutdoor(): void {
+    if (!this.sharedOutdoor || this.shuttingDown) {
+      return;
+    }
+    const reading = this.sharedOutdoor.current();
+    if (!this.sharedOutdoorAccessory) {
+      const uuid = this.api.hap.uuid.generate('samsung-rac:shared-outdoor');
+      const cached = this.cachedAccessories.find(accessory => accessory.UUID === uuid);
+      if (!this.sharedOutdoor.hasReadings && !cached) {
+        return;
+      }
+      const accessory = cached ?? new this.api.platformAccessory(this.settings.sharedOutdoorName, uuid);
+      accessory.context = { ...accessory.context, outdoor: true, sharedOutdoor: true };
+      accessory.getService(this.Service.AccessoryInformation)
+        ?.setCharacteristic(this.Characteristic.Manufacturer, 'Samsung')
+        .setCharacteristic(this.Characteristic.Model, 'Multisplit outdoor temperature')
+        .setCharacteristic(this.Characteristic.SerialNumber, 'samsung-rac-shared-outdoor');
+      const service = accessory.getService(this.Service.TemperatureSensor)
+        ?? accessory.addService(this.Service.TemperatureSensor);
+      const name = accessory.context.configuredName ?? this.settings.sharedOutdoorName;
+      service.setCharacteristic(this.Characteristic.Name, name);
+      service.addOptionalCharacteristic(this.Characteristic.ConfiguredName);
+      service.getCharacteristic(this.Characteristic.ConfiguredName)
+        .updateValue(name)
+        .onSet(value => {
+          accessory.context.configuredName = String(value);
+          this.api.updatePlatformAccessories([accessory]);
+        });
+      service.getCharacteristic(this.Characteristic.CurrentTemperature)
+        .setProps({ minValue: -100, maxValue: 100, minStep: 0.1 })
+        .onGet(() => {
+          const current = this.sharedOutdoor?.current();
+          if (!current) {
+            throw new this.api.hap.HapStatusError(this.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+          }
+          return current.temperature;
+        });
+      // Set a value/error before registration, so the first HomeKit read is truthful.
+      this.sharedOutdoorAccessory = accessory;
+      this.pushSharedOutdoor();
+      this.published.add(uuid);
+      if (cached) {
+        this.api.updatePlatformAccessories([accessory]);
+      } else {
+        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        this.cachedAccessories.push(accessory);
+      }
+      this.log.info(`Shared outdoor sensor: ${name}. All configured ACs supply one sensor.`);
+      return;
+    }
+    const service = this.sharedOutdoorAccessory.getService(this.Service.TemperatureSensor);
+    if (reading) {
+      service?.updateCharacteristic(this.Characteristic.CurrentTemperature, reading.temperature);
+    } else {
+      service?.updateCharacteristic(this.Characteristic.CurrentTemperature,
+        new this.api.hap.HapStatusError(this.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE));
+    }
   }
 
   /**

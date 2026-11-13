@@ -125,9 +125,10 @@
         "oneOf": [
           { "title": "On \u2014 as a second sensor on the air conditioner (same room)", "enum": ["linked"] },
           { "title": "On \u2014 as a separate accessory (can be put in another room)", "enum": ["separate"] },
+          { "title": "One shared sensor for a multisplit outdoor unit", "enum": ["shared"] },
           { "title": "Off", "enum": ["off"] }
         ],
-        "description": "Publishes the unit's outdoor sensor as a temperature tile. On the air conditioner it takes that unit's room; as a separate accessory it appears on its own in the Home app, so you can assign it wherever you like \u2014 an outdoor room, say. It only shows up once the unit actually reports a reading."
+        "description": "Publishes the unit's outdoor sensor as a temperature tile. On the air conditioner it takes that unit's room; as a separate accessory it appears on its own in the Home app, so you can assign it wherever you like \u2014 an outdoor room, say. It only shows up once the unit actually reports a reading. Shared publishes exactly one separate accessory using readings from all configured ACs. Use only when these ACs share one outdoor unit. A fresh reading from a running AC is preferred, with fallback to another unit."
       },
       "outdoorTemperatureUnit": {
         "title": "Outdoor temperature scale",
@@ -158,6 +159,12 @@
         "type": "integer",
         "default": 5,
         "minimum": 1
+      },
+      "sharedOutdoorName": {
+        "title": "Shared outdoor sensor name",
+        "type": "string",
+        "default": "AC Outdoor Temperature",
+        "condition": { "functionBody": "return model.outdoorTemperature === 'shared';" }
       },
       "certificateUrl": {
         "title": "Client certificate URL",
@@ -191,6 +198,7 @@
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
     "freezeIndoorTemperatureWhenOff",
+    "sharedOutdoorName",
     {
       "type": "fieldset",
       "title": "Advanced",
