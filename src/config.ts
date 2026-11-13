@@ -89,6 +89,8 @@ export interface NormalisedConfig {
    * the Samsung app; the plugin reports them as Auto and leaves them alone.
    */
   modeSwitches: ModeSwitchConfig[];
+  /** Native TP6X Good Sleep duration; null keeps the switch hidden. */
+  goodSleepMinutes: number | null;
   certificateUrl?: string;
 }
 
@@ -239,10 +241,22 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       config.freezeIndoorTemperatureWhenOff, 'freezeIndoorTemperatureWhenOff', log),
     convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
+    goodSleepMinutes: toGoodSleepMinutes(config.goodSleepMinutes, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
   };
+}
+
+function toGoodSleepMinutes(value: unknown, log: Logging): number | null {
+  if (value === undefined || value === 0) {
+    return null;
+  }
+  if (value === 60 || value === 120) {
+    return value;
+  }
+  log.warn('Ignoring goodSleepMinutes: the verified durations are 60 and 120 minutes.');
+  return null;
 }
 
 /**

@@ -8,6 +8,13 @@ function logger() {
 }
 
 describe('normaliseConfig', () => {
+  it('enables Good Sleep only for explicitly verified durations', () => {
+    const log = logger();
+    const parse = (value: unknown) => normaliseConfig({ platform: 'x', goodSleepMinutes: value } as never, log as never).goodSleepMinutes;
+    for (const value of [undefined, 0, null, 30, 90, '60', -60]) { expect(parse(value)).toBeNull(); }
+    expect(parse(60)).toBe(60);
+    expect(parse(120)).toBe(120);
+  });
   it('fills in the defaults', () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

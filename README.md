@@ -322,7 +322,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `updateInterval` | `10` | Seconds between polls; minimum 5. |
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
 | `convenienceModes` | none | `Comode` values to publish a switch for, as `"Quiet"` or `{ "mode": "Quiet", "name": "WindFree" }`. One runs at a time, so the switches act as one group. |
-| `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind`, the two HomeKit's air conditioner tile cannot express. Same two shapes. |
+| `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind` (Fan), the two HomeKit's air conditioner tile cannot express. Same two shapes. |
 | `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
 | `hideOutdoorTemperatureWhenOff` | `false` | Stop reporting the outdoor tile while the unit is off, for units whose reading is only trustworthy when running. |
@@ -353,3 +353,59 @@ npm run watch    # rebuild and restart Homebridge on change
 Unit tests never touch the network: `nock` is locked down and `fetch` is replaced
 outright. The fixture in `tests/fixtures/devices.json` is a real capture from the
 reference unit.
+
+
+## Samsung controls on TP6X_RAC_17K
+
+Local read-back tests on three TP6X_RAC_17K units confirmed the following
+controls. Wind free and Good Sleep were also matched against SmartThings on
+one of those units. These protocol model results do not establish support on every
+Samsung retail model.
+
+| Home name | Local option |
+|---|---|
+| Wind free | `Comode_Nano` |
+| 2-Step | `Comode_2Step` |
+| Fast Turbo | `Comode_Speed` |
+| Comfort | `Comode_Comfort` |
+| Quiet | `Comode_Quiet` |
+| Good Sleep | `Comode_Sleep` with `Sleep_2` for one hour or `Sleep_4` for two hours |
+
+```json
+{
+  "convenienceModes": [
+    { "mode": "Nano", "name": "Wind free" },
+    { "mode": "2Step", "name": "2-Step" },
+    { "mode": "Speed", "name": "Fast Turbo" },
+    { "mode": "Comfort", "name": "Comfort" },
+    { "mode": "Quiet", "name": "Quiet" }
+  ],
+  "modeSwitches": [{ "mode": "Dry", "name": "Dry" }, { "mode": "Wind", "name": "Fan" }],
+  "goodSleepMinutes": 60
+}
+```
+
+Good Sleep is one switch with a default duration chosen in Homebridge settings.
+Start it while the AC is running in Cool mode. The switch also reflects Good
+Sleep started from SmartThings, even with a different duration. It stays on
+while the AC reports active sleep mode. A configured legacy `Sleep` preset
+switch is suppressed when this duration-aware control is enabled.
+
+Starting stages the duration, enters Sleep, then explicitly reapplies the
+duration while Sleep is active. The sequence shares the device write queue
+and is confirmed with a fresh read. Cancelling sends `Comode_Off`, preserving
+power. **Do not cancel with `Sleep_0`: these units turn off immediately.**
+One- and two-hour settings and cancellation were verified; a complete sleep
+cycle and automatic expiry have not been observed. Other durations and base
+modes are deliberately unavailable until tested.
+
+The AC owns Good Sleep timing, so it continues independently of Homebridge.
+
+Apple Home's HeaterCooler mode picker is fixed to Auto, Heat and Cool, with
+power separate. Fan and Dry cannot be added as custom picker entries, so they
+remain separate switches. They select a base mode; the main AC tile controls
+power. Presets are mutually exclusive and reflect the AC's current state.
+
+Existing service subtypes and accessory UUIDs are retained. Legacy default
+names migrate once to Fan, Fast Turbo and 2-Step; other custom Home names remain intact. New custom names survive future
+restarts, including a deliberate return to an old label.

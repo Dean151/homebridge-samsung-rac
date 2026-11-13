@@ -68,11 +68,19 @@ export class DeviceAdapter {
   private loggedRawDocument = false;
 
   /**
-   * Writes run one at a time, chained rather than dropped: a HomeKit scene
+   * Reads and writes share one queue. Writes are chained rather than dropped: a HomeKit scene
    * fires Active, mode and temperature together, and dropping the overlap
    * silently loses whichever the user cares about most.
    */
   private queue: Promise<unknown> = Promise.resolve();
+  private queueVersion = 0;
+  private pendingRead?: { version: number; promise: Promise<RacStatus> };
+  private readFailures = 0;
+
+  /** Includes failures served from the stale cache, so polling can back off. */
+  get consecutiveReadFailures(): number {
+    return this.readFailures;
+  }
 
   private readonly cacheMs: number;
   private readonly maxStaleMs: number;
@@ -99,7 +107,24 @@ export class DeviceAdapter {
 
   // --- reads ---------------------------------------------------------------
 
-  async getStatus(): Promise<RacStatus> {
+  getStatus(): Promise<RacStatus> {
+    if (this.pendingRead?.version === this.queueVersion) {
+      return this.pendingRead.promise;
+    }
+    const promise = this.enqueue(() => this.readStatus());
+    const pending = { version: this.queueVersion, promise };
+    this.pendingRead = pending;
+    const clear = () => {
+      if (this.pendingRead === pending) {
+        this.pendingRead = undefined;
+      }
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }
+
+  /** Called only inside the operation queue, including command read-backs. */
+  private async readStatus(): Promise<RacStatus> {
     const now = Date.now();
     if (this.cached && now - this.cachedAt < this.cacheMs) {
       return this.cached;
@@ -124,9 +149,11 @@ export class DeviceAdapter {
       const status = toRacStatus(device, this.statusOptions);
       this.logStatusChange(status);
       this.cached = status;
-      this.cachedAt = now;
+      this.cachedAt = Date.now();
+      this.readFailures = 0;
       return this.cached;
     } catch (error) {
+      this.readFailures++;
       // Serving a slightly stale reading beats flapping the accessory on one
       // dropped packet — but only briefly. Past maxStaleMs the caller must see
       // the failure, or a unit that has been unplugged for an hour still shows
@@ -253,24 +280,83 @@ export class DeviceAdapter {
     });
   }
 
+  /** Native sleep mode, verified on TP6X_RAC_17K. Never cancel with Sleep_0: it powers off. */
+  setGoodSleep(minutes: number | null): Promise<ApplyResult> {
+    if (minutes !== null && minutes !== 60 && minutes !== 120) {
+      return Promise.reject(new Error('Good Sleep supports the verified 60 or 120 minute durations.'));
+    }
+    this.queueVersion++;
+    return this.enqueue(async () => {
+      this.invalidate();
+      const before = await this.readStatus();
+      if (this.readFailures) {
+        throw new Error('A fresh AC status is required before changing Good Sleep.');
+      }
+      if (before.model !== 'TP6X_RAC_17K' || !/^\d+$/.test(before.options.Sleep ?? '')) {
+        throw new Error('Native Good Sleep has not been verified for this model.');
+      }
+      if (minutes !== null && (!before.active || before.mode !== 'Cool')) {
+        throw new Error('Turn the AC on in Cool mode before starting Good Sleep.');
+      }
+      if (minutes === null && before.comode !== 'Sleep') {
+        return { applied: true, requested: false, actual: false, status: before };
+      }
+      const requested = {
+        active: before.active, comode: minutes === null ? 'Off' : 'Sleep',
+        sleep: minutes === null ? '0' : String(minutes / 30),
+      };
+      // Stage the duration, enter Sleep, then set it explicitly while active.
+      // The first duration write is not necessarily visible until the mode is active.
+      // Keep the entire sequence in one queue slot so another control cannot split it.
+      const tokens = minutes === null
+        ? ['Comode_Off']
+        : [`Sleep_${minutes / 30}`, 'Comode_Sleep', `Sleep_${minutes / 30}`];
+      this.lastWrite = null;
+      for (const token of tokens) {
+        const remaining = this.minWriteIntervalMs - (Date.now() - this.lastWriteAt);
+        if (remaining > 0) {
+          await delay(remaining);
+        }
+        try {
+          await this.api.put(`/devices/${this.deviceId}/mode`, { Mode: { options: [token] } });
+        } finally {
+          this.lastWriteAt = Date.now();
+          this.invalidate();
+        }
+        await delay(this.settleMs);
+      }
+      const status = await this.readStatus();
+      if (this.readFailures) {
+        throw new Error('Could not confirm Good Sleep from a fresh status.');
+      }
+      const actual = { active: status.active, comode: status.comode, sleep: status.options.Sleep };
+      const applied = JSON.stringify(actual) === JSON.stringify(requested);
+      if (!applied) {
+        this.log.warn(`${this.label}: Good Sleep was not confirmed; requested ${JSON.stringify(requested)}, got ${JSON.stringify(actual)}.`);
+      }
+      return { applied, requested, actual, status };
+    });
+  }
+
   // --- the write path ------------------------------------------------------
 
-  private applyChange(change: Change): Promise<ApplyResult> {
-    const run = this.queue.then(
-      () => this.write(change),
-      () => this.write(change),
-    );
-    // Keep the chain alive regardless of outcome, but don't leave an unhandled
-    // rejection behind on the internal handle.
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(operation, operation);
     this.queue = run.catch(() => undefined);
     return run;
+  }
+
+  private applyChange(change: Change): Promise<ApplyResult> {
+    // A read requested after this write must not join one queued before it.
+    this.queueVersion++;
+    return this.enqueue(() => this.write(change));
   }
 
   private async write(requested: Change): Promise<ApplyResult> {
     // Resolve before anything reads body or requested — including the dedup key,
     // which must key on the value that will actually go over the wire.
     const change: Change = requested.resolve
-      ? { ...requested, ...requested.resolve(await this.getStatus()) }
+      ? { ...requested, ...requested.resolve(await this.readStatus()) }
       : requested;
 
     // The dedup key MUST include the value. Keying on the target alone makes
@@ -280,10 +366,14 @@ export class DeviceAdapter {
     const now = Date.now();
 
     if (this.lastWrite && this.lastWrite.key === key && now - this.lastWrite.at < this.dedupMs) {
-      this.log.debug(`Skipping duplicate write ${key}`);
-      return { applied: true, requested: change.requested, actual: change.requested, status: await this.getStatus() };
+      const status = await this.readStatus();
+      const actual = change.read(status);
+      if (JSON.stringify(actual) === JSON.stringify(change.requested)) {
+        this.log.debug(`Skipping duplicate write ${key}`);
+        return { applied: true, requested: change.requested, actual, status };
+      }
     }
-    this.lastWrite = { key, at: now };
+    this.lastWrite = null;
 
     const sinceLastWrite = now - this.lastWriteAt;
     if (sinceLastWrite < this.minWriteIntervalMs) {
@@ -303,13 +393,14 @@ export class DeviceAdapter {
     // to assume the local API is more honest. Confirm by reading back.
     await delay(this.settleMs);
     this.invalidate();
-    const status = await this.getStatus();
+    const status = await this.readStatus();
     const actual = change.read(status);
     const applied = JSON.stringify(actual) === JSON.stringify(change.requested);
 
     if (!applied) {
       this.reportRejected(change, actual, status);
     } else {
+      this.lastWrite = { key, at: Date.now() };
       this.log.debug(`${this.label} confirmed ${change.field} = ${format(actual)}.`);
       this.warnedFields.delete(change.field);
     }
