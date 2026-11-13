@@ -56,7 +56,7 @@ describe('bounded UDP discovery', () => {
   afterEach(() => { jest.useRealTimers(); });
   const options = () => ({
     targets: [{ uuid, host: '192.168.1.227' }],
-    interfaces: [{ address: '192.168.1.188', netmask: '255.255.255.0' }],
+    interfaces: [{ address: '192.168.1.10', netmask: '255.255.255.0' }],
   });
 
   it('matches only configured UUIDs on the local subnet and closes all timers/sockets', async () => {

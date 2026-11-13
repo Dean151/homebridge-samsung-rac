@@ -353,6 +353,28 @@ describe('SamsungRacAccessory', () => {
       expect(h.accessory.context.shutdownTimer).toBeUndefined();
     });
 
+    it('does not arm from cached status after a failed LAN read', async () => {
+      const h = await build({ settings: { shutdownTimers: [1] } });
+      Object.defineProperty(h.adapter, 'consecutiveReadFailures', { value: 1 });
+      await expect(setting(h.accessory, 1)?.setHandler?.(true)).rejects.toBeInstanceOf(FakeHapStatusError);
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+    });
+
+    it('retries a deadline without writing when a failed read returns cached status', async () => {
+      const h = await build({ settings: { shutdownTimers: [1] } });
+      await setting(h.accessory, 1)?.setHandler?.(true);
+      Object.defineProperty(h.adapter, 'consecutiveReadFailures', { value: 1, configurable: true });
+      await jest.advanceTimersByTimeAsync(60000);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(setting(h.accessory, 1)?.getHandler?.()).toBe(true);
+      Object.defineProperty(h.adapter, 'consecutiveReadFailures', { value: 0 });
+      h.adapter.setPower.mockResolvedValue({ applied: true, status: { ...baseStatus, active: false } });
+      await jest.advanceTimersByTimeAsync(30000);
+      expect(h.adapter.setPower).toHaveBeenCalledWith(false);
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+    });
+
     it('does not arm after a cancellation overtakes an in-flight status read', async () => {
       const h = await build({ settings: { shutdownTimers: [30] } });
       let finish!: (value: RacStatus) => void;

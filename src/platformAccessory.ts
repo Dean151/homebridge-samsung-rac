@@ -270,6 +270,9 @@ export class SamsungRacAccessory {
         if (!stillCurrent()) {
           return false;
         }
+        if (this.adapter.consecutiveReadFailures) {
+          throw new Error('A fresh AC status is required before executing a shutoff timer.');
+        }
         this.status = status;
         this.markResponsive();
         if (!this.status.active) {
@@ -306,6 +309,9 @@ export class SamsungRacAccessory {
       const status = await this.adapter.getStatus();
       if (request !== this.timerRequest) {
         return;
+      }
+      if (this.adapter.consecutiveReadFailures) {
+        throw new Error('A fresh AC status is required before starting a shutoff timer.');
       }
       this.status = status;
       this.markResponsive();

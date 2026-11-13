@@ -7,91 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.2-local.7] - 2026-11-05
-
 ### Added
 
-- Wind free (`Nano`), 2-Step and Comfort configuration choices verified on three
-  TP6X_RAC_17K units, with mutually exclusive preset states.
-- Optional native Good Sleep switch with verified one- or two-hour duration,
-  atomic command sequencing, fresh read-back and cancellation that keeps power on.
-- Good Sleep visibility limited to verified models, with startup restricted to
-  an already-running Cool mode.
+- Opt-in UUID-based SSDP discovery, authenticated identity checks, pairing lookup
+  by UUID, bounded reconnect scans and startup retries after address changes.
+- Optional adaptive polling with short follow-ups after controls, shared reads,
+  a per-device operation queue and progressive offline backoff.
+- Opt-in Auto Clean, separate swing axes, Purify (SPI), and verified TP6X_RAC_17K
+  Wind free, 2-Step, Comfort and native one- or two-hour Good Sleep controls.
+- Persistent local shutoff timers with confirmed power-off and bounded recovery.
+- On-demand local usage history with raw cumulative counters and CSV export.
+  Requires Node.js 22.13 or later with `node:sqlite`; AC control still supports Node 20.
+- One shared outdoor-temperature accessory for multisplit systems, with source
+  expiry and fallback using existing polls, including subzero temperatures.
 
 ### Changed
 
-- Samsung labels: Fan, Fast Turbo, Purify, Vertical swing and Horizontal swing.
-- One-time migration of legacy default names while preserving service identities
-  and other user-assigned names.
-- Sleep duration changes trigger the adaptive polling follow-up window.
-
-## [0.4.2-local.6] - 2026-11-04
-
-### Added
-
-- Optional adaptive polling: two-second follow-ups for thirty seconds after a
-  control change or HomeKit command, then the configured normal interval.
-- Progressive offline backoff, including failed reads served from cached status.
-- Completion-based scheduling, shared concurrent reads and one read/write queue
-  per AC, reusing command read-backs instead of overlapping background requests.
+- Clarified default control names while preserving service identities and custom names.
+- Included the discovery UUID field in the plugin configuration form.
 
 ### Fixed
 
-- Failed or refused writes are no longer incorrectly suppressed as successful
-  duplicates when retried.
-
-
-## [0.4.2-local.5] - 2026-11-04
-
-### Added
-
-- Independent Up Down and Left Right swing switches, preserving the other axis
-  even when HomeKit sends both changes together.
-- Optional SPI setting switch with local read-back confirmation.
-- One shared outdoor temperature accessory for a multisplit system, with source
-  fallback, reading expiry, stable identity and no additional network polling.
-- Subzero outdoor temperatures are exposed without HomeKit clipping them to zero.
-
-
-## [0.4.2-local.4] - 2026-11-04
-
-### Added
-
-- Optional local shutoff switches with replaceable countdowns, persisted deadlines,
-  manual-off cancellation, and a bounded five-minute recovery period.
-- Fresh device reads and confirmed power-off for timer execution; stale timers
-  cannot act hours after a long outage.
-- Verified Quiet and Speed setting support on three TP6X_RAC_17K units.
-
-
-## [0.4.2-local.3] - 2026-11-04
-
-### Fixed
-
-- Readable history text in dark mode and a bounded, scrollable history table.
-- Show the existing SSDP device UUID field in the configuration form layout.
-
-## [0.4.2-local.2] - 2026-11-04
-
-### Added
-
-- Optional Auto Clean switch with read-back confirmation, separate from operating modes.
-- On-demand local usage history in plugin settings, with raw cumulative counters,
-  reset detection and CSV export; no inferred runtime or energy units.
-- History downloads retain UUID discovery and authenticated identity checks.
-- Read-only SQLite parsing using the Node built-in module, without new dependencies.
-
-
-## [0.4.2-ssdp.1] - 2026-11-04
-
-### Added
-
-- Optional UUID-based SSDP discovery at startup and after connection failures.
-- Authenticated device identity checks before using discovered endpoints.
-- Pairing lookup by UUID, retaining existing credentials and HomeKit identities.
-- Bounded shared scans, offline backoff, startup retries and shutdown cleanup.
-- Discovery-aware connection testing and token management in the plugin UI.
-
+- Failed or refused writes are not suppressed as successful duplicates on retry.
 
 ## [0.4.1] - 2026-09-29
 

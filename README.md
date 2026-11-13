@@ -354,12 +354,17 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `devices[].token` | — | Only if you paired outside this plugin. |
 | `devices[].heating` | `auto` | `on` or `off` to override whether Heat is offered. `auto` reads it from the unit, which is right for every unit seen so far. |
 | `updateInterval` | `10` | Seconds between polls; minimum 5. |
+| `adaptivePolling` | `false` | Brief two-second follow-ups after controls and progressive offline backoff. |
+| `shutdownTimers` | `[]` | Optional local shutoff durations in whole minutes, from 1 to 1440, with up to eight distinct choices. |
+| `detailedSwing` | `false` | Separate vertical and horizontal swing switches. |
+| `spiSwitch` | `false` | Expose the reported Purify (SPI) setting. |
+| `sharedOutdoorName` | `AC Outdoor Temperature` | Name of the optional shared outdoor sensor. |
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
 | `convenienceModes` | none | `Comode` values to publish a switch for, as `"Quiet"` or `{ "mode": "Speed", "name": "Fast Turbo" }`. One runs at a time, so the switches act as one group. |
 | `modeSwitches` | none | `Mode.modes` values to publish a switch for — `Dry` and `Wind`, the two HomeKit's air conditioner tile cannot express. Same two shapes. |
 | `goodSleepMinutes` | `0` (disabled) | Native Good Sleep switch for verified TP6X_RAC_17K units: `60` or `120` minutes. Start with the AC running in Cool mode. |
 | `autoCleanSwitch` | `false` | Expose Auto Clean when the unit reports `Autoclean_On` or `Autoclean_Off`. This is an enabled setting, not a cleaning-in-progress indicator. |
-| `outdoorTemperature` | `linked` | Where the unit's outdoor sensor goes: `linked` on the air conditioner, in its room; `separate` as an accessory of its own, which you can put in another room; `off` to hide it. |
+| `outdoorTemperature` | `linked` | `linked` on each AC, `separate` per-AC accessories, `shared` for one multisplit outdoor unit, or `off`. |
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
 | `hideOutdoorTemperatureWhenOff` | `false` | Stop reporting the outdoor tile while the unit is off, for units whose reading is only trustworthy when running. |
 | `freezeIndoorTemperatureWhenOff` | `false` | Hold the room temperature at its last running value while the unit is off, for units whose reading is only trustworthy when running. |
@@ -391,10 +396,9 @@ outright. The fixture in `tests/fixtures/devices.json` is a real capture from th
 reference unit.
 
 
-### Local preview: Auto-clean and runtime history
+### Auto Clean and usage history
 
-The `0.4.2-local.3` preview retains UUID discovery and adds an opt-in Auto Clean
-switch. Use `"autoCleanSwitch": true` with
+Auto Clean is an opt-in switch. Use `"autoCleanSwitch": true` with
 `"modeSwitches": [{"mode":"Dry"}, {"mode":"Wind"}]` to expose all three controls.
 Dry and Fan select an operating mode; the main AC tile controls power.
 Turning a mode switch off returns to the last ordinary mode (or Cool as fallback).
@@ -404,7 +408,7 @@ write is confirmed by a status read; a rejected setting returns to the actual va
 
 In the plugin settings, **History** beside a paired unit reads its local usage
 database on demand. The table shows the latest 60 records; CSV exports every
-record. It requires Node.js 22.13+ with `node:sqlite` available (the Pi uses 24).
+record. It requires Node.js 22.13+ with `node:sqlite` available.
 There are no new dependencies or background history polls. The database is opened
 read-only in a private temporary directory and removed after reading.
 
@@ -429,7 +433,7 @@ the AC. A power-off observed from Home, SmartThings, or the remote also cancels 
 A duplicate On command deliberately starts a fresh countdown from that moment.
 
 The deadline is stored with the existing Homebridge accessory and resumes after a
-restart. The Pi and Homebridge must be available to execute it. A brief failure is
+restart. The Homebridge host must be available to execute it. A brief failure is
 retried for up to five minutes after the original deadline; older deadlines are
 discarded rather than shutting down a possibly new session hours later. Each
 attempt reads the AC first and confirms the resulting off state. Power cycles
@@ -535,7 +539,7 @@ connections or cloud requests.
 
 Local read-back tests on three TP6X_RAC_17K units confirmed the following
 controls. Wind free and Good Sleep were also matched against SmartThings on
-the Office AC. These protocol model results do not establish support on every
+one of those units. These protocol model results do not establish support on every
 Samsung retail model.
 
 | Home name | Local option |

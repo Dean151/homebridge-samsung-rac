@@ -1,10 +1,12 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isBuiltin } from 'node:module';
 import { decodeUsageHistory, normaliseUsageRows, readUsageHistory } from '../../src/usageHistory';
 
 describe('usage history', () => {
-  it('decodes an actual SQLite payload and keeps cumulative counters unscaled', async () => {
+  const hasSqlite = isBuiltin('node:sqlite');
+  (hasSqlite ? it : it.skip)('decodes an actual SQLite payload and keeps cumulative counters unscaled', async () => {
     const { DatabaseSync } = await import('node:sqlite');
     const directory = await mkdtemp(join(tmpdir(), 'rac-test-'));
     try {
@@ -24,6 +26,11 @@ describe('usage history', () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  (hasSqlite ? it.skip : it)('reports the optional SQLite requirement on unsupported Node versions', async () => {
+    const header = Buffer.from('SQLite format 3\0').toString('base64');
+    await expect(decodeUsageHistory(header)).rejects.toThrow('Usage history needs Node.js 22.13 or later');
   });
 
   it.each(['not base64', 'e30=', 'A'.repeat(6 * 1024 * 1024)])('rejects non-database or excessive data', async body => {
