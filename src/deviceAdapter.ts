@@ -74,6 +74,12 @@ export class DeviceAdapter {
    */
   private queue: Promise<unknown> = Promise.resolve();
 
+  private readFailures = 0;
+
+  get consecutiveReadFailures(): number {
+    return this.readFailures;
+  }
+
   private readonly cacheMs: number;
   private readonly maxStaleMs: number;
   private readonly settleMs: number;
@@ -124,9 +130,11 @@ export class DeviceAdapter {
       const status = toRacStatus(device, this.statusOptions);
       this.logStatusChange(status);
       this.cached = status;
-      this.cachedAt = now;
+      this.cachedAt = Date.now();
+      this.readFailures = 0;
       return this.cached;
     } catch (error) {
+      this.readFailures++;
       // Serving a slightly stale reading beats flapping the accessory on one
       // dropped packet — but only briefly. Past maxStaleMs the caller must see
       // the failure, or a unit that has been unplugged for an hour still shows

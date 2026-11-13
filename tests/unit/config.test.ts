@@ -8,6 +8,14 @@ function logger() {
 }
 
 describe('normaliseConfig', () => {
+  it('requires explicit, bounded, whole-minute timer durations and removes duplicates', () => {
+    const log = logger();
+    const parse = (shutdownTimers: unknown) => normaliseConfig({ platform: 'x', shutdownTimers } as never, log as never);
+    expect(parse(undefined).shutdownTimers).toEqual([]);
+    expect(parse('30,60').shutdownTimers).toEqual([]);
+    expect(parse([120, 30, 60, 30, 0, -1, 1.5, '10', 1441]).shutdownTimers).toEqual([30, 60, 120]);
+    expect(parse(Array.from({ length: 10 }, (_, i) => i + 1)).shutdownTimers).toHaveLength(8);
+  });
   it('fills in the defaults', () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({
