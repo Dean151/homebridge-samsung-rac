@@ -353,3 +353,19 @@ npm run watch    # rebuild and restart Homebridge on change
 Unit tests never touch the network: `nock` is locked down and `fetch` is replaced
 outright. The fixture in `tests/fixtures/devices.json` is a real capture from the
 reference unit.
+
+
+## Local usage history
+
+In the plugin settings, **History** beside a paired unit reads its local usage
+database on demand. The table shows the latest 60 records; CSV exports every
+record. It requires Node.js 22.13+ with `node:sqlite` available.
+There are no new dependencies or background history polls. The database is opened
+read-only in a private temporary directory and removed after reading.
+
+The observed date keys use `YYYYMMDDHH`, with an unconfirmed device timezone.
+Runtime values are cumulative counters whose units are not yet calibrated; the
+view shows raw values and increases between consecutive records, not hours or
+per-hour consumption. Counter decreases are marked as resets. All three tested
+TP6X_RAC_17K units report zero for every energy counter, so this is not usable
+energy/kWh monitoring. The data can also lag recent operation.

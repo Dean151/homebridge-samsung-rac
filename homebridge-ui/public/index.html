@@ -1,5 +1,8 @@
 <style>
   #rac { margin-bottom: 1rem; }
+  #rac-history table, #rac-history td, #rac-history th, #rac-history caption { color: inherit; }
+  #rac-history caption { caption-side: top; }
+  #rac-history .rac-history-table { max-height: 26rem; overflow: auto; }
 
   #rac .rac-card {
     background: linear-gradient(135deg, #1f4f82 0%, #3f8fd0 100%);
@@ -61,6 +64,22 @@
   <div id="rac-devices" class="card mt-3" style="display: none">
     <div class="card-header">Your air conditioners</div>
     <div id="rac-device-list" class="card-body py-1"></div>
+  </div>
+
+  <div id="rac-history" class="card mt-3" style="display: none" aria-live="polite">
+    <div id="rac-history-title" class="card-header">Runtime history</div>
+    <div class="card-body">
+      <p id="rac-history-summary"></p>
+      <p>Device clock times have no confirmed timezone. Runtime counters are cumulative;
+        their units are not yet verified, so these values are not hours. Gaps and counter resets may occur.</p>
+      <div id="rac-history-actions" class="mb-2"></div>
+      <div class="rac-history-table"><table class="table table-sm">
+        <caption>Latest 60 records; export includes all records.</caption>
+        <thead><tr><th scope="col">Device time</th><th scope="col">Runtime counter</th>
+          <th scope="col">Increase since previous record</th></tr></thead>
+        <tbody id="rac-history-rows"></tbody>
+      </table></div>
+    </div>
   </div>
 
   <div id="rac-wizard" class="card mt-3" style="display: none">
@@ -209,6 +228,7 @@
         actions.style.gap = '0.4rem';
 
         if (device.paired) {
+          actions.appendChild(button('History', 'btn btn-sm btn-outline-primary', () => usageHistory(device.host)));
           actions.appendChild(button('Test', 'btn btn-sm btn-outline-primary', () => testDevice(device.host)));
           actions.appendChild(button('Re-pair', 'btn btn-sm btn-outline-secondary', () => openWizard(device.host)));
           actions.appendChild(button('Forget', 'btn btn-sm btn-link text-danger', () => forget(device.host)));
@@ -256,6 +276,53 @@
         homebridge.toast.success(
           `${device.model || 'Air conditioner'} answered, currently ${device.power || 'unknown'}.`, TITLE,
         );
+      } catch (error) {
+        homebridge.toast.error(error.message, TITLE);
+      } finally {
+        homebridge.hideSpinner();
+      }
+    }
+
+    async function usageHistory(host) {
+      const config = await currentConfig();
+      const unit = (config.devices || []).find(device => device.host === host);
+      const card = document.getElementById('rac-history');
+      card.style.display = 'none';
+      homebridge.showSpinner();
+      try {
+        const history = await homebridge.request('/device/history', {
+          host, deviceUuid: unit?.deviceUuid, certificateUrl: config.certificateUrl,
+        });
+        document.getElementById('rac-history-title').textContent = `${unit?.name || host} — runtime history`;
+        document.getElementById('rac-history-summary').textContent =
+          `${history.records.length} records, fetched ${new Date(history.fetchedAt).toLocaleString()}. `
+          + (history.energyAllZero ? 'The AC reports zero for every energy counter; energy usage is unavailable.'
+            : 'Energy counter units are unverified; raw values are included in the export.');
+        const rows = document.getElementById('rac-history-rows');
+        rows.replaceChildren();
+        for (const record of history.records.slice(-60).reverse()) {
+          const row = document.createElement('tr');
+          for (const value of [record.deviceTime, record.runningCounter,
+            record.counterReset ? 'Counter reset' : record.counterIncrease ?? '—']) {
+            const cell = document.createElement('td');
+            cell.textContent = String(value);
+            row.appendChild(cell);
+          }
+          rows.appendChild(row);
+        }
+        const actions = document.getElementById('rac-history-actions');
+        actions.replaceChildren(button('Export all records (CSV)', 'btn btn-sm btn-outline-primary', () => {
+          const lines = ['device_time,runtime_counter_raw,increase_raw,counter_reset,power_counter_raw',
+            ...history.records.map(r => [r.deviceTime, r.runningCounter, r.counterIncrease ?? '', r.counterReset, r.powerCounter].join(','))];
+          const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' }));
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'samsung-ac-runtime-history.csv';
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }));
+        card.style.display = '';
+        homebridge.fixScrollHeight();
       } catch (error) {
         homebridge.toast.error(error.message, TITLE);
       } finally {

@@ -79,6 +79,11 @@ export class LocalApi {
     return JSON.parse(await this.send('GET', path)) as T;
   }
 
+  /** Some firmware resources carry base64 data despite their JSON content type. */
+  async getText(path: string): Promise<string> {
+    return this.send('GET', path);
+  }
+
   async put(path: string, body: unknown): Promise<string> {
     return this.send('PUT', path, body);
   }
