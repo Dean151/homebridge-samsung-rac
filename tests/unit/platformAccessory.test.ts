@@ -30,6 +30,7 @@ const baseStatus: RacStatus = {
 };
 
 interface Harness {
+  stop: () => void;
   accessory: FakeAccessory;
   heaterCooler: FakeService;
   adapter: Record<string, jest.Mock>;
@@ -110,11 +111,12 @@ async function build(options: {
     },
   };
 
-  await SamsungRacAccessory.create(
+  const instance = await SamsungRacAccessory.create(
     platform as never, accessory as never, adapter as never, outdoor as never,
   );
 
   return {
+    stop: () => instance.stop(),
     accessory,
     heaterCooler: accessory.getService(Service.HeaterCooler) as FakeService,
     adapter: adapter as unknown as Record<string, jest.Mock>,
@@ -147,6 +149,30 @@ describe('SamsungRacAccessory', () => {
   afterEach(() => {
     jest.clearAllTimers();
     jest.useRealTimers();
+  });
+
+  describe('adaptive polling integration', () => {
+    it('uses five-second polls while off and enters the follow-up window on a remote control change', async () => {
+      const h = await build({ settings: { updateInterval: 5, adaptivePolling: true }, status: { active: false } });
+      expect(h.adapter.getStatus).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(h.adapter.getStatus).toHaveBeenCalledTimes(2);
+      h.setStatus({ windDirection: 'All' });
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(h.adapter.getStatus).toHaveBeenCalledTimes(3);
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(h.adapter.getStatus).toHaveBeenCalledTimes(4);
+      h.stop();
+    });
+
+    it('starts follow-ups after a HomeKit command without powering an idle AC on', async () => {
+      const h = await build({ settings: { updateInterval: 5, adaptivePolling: true }, status: { active: false } });
+      await h.heaterCooler.getCharacteristic(Characteristic.Active).setHandler?.(0);
+      expect(h.adapter.setPower).toHaveBeenCalledWith(false);
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(h.adapter.getStatus).toHaveBeenCalledTimes(2);
+      h.stop();
+    });
   });
 
   describe('temperature', () => {

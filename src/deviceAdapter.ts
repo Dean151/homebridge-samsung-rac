@@ -68,11 +68,19 @@ export class DeviceAdapter {
   private loggedRawDocument = false;
 
   /**
-   * Writes run one at a time, chained rather than dropped: a HomeKit scene
+   * Reads and writes share one queue. Writes are chained rather than dropped: a HomeKit scene
    * fires Active, mode and temperature together, and dropping the overlap
    * silently loses whichever the user cares about most.
    */
   private queue: Promise<unknown> = Promise.resolve();
+  private queueVersion = 0;
+  private pendingRead?: { version: number; promise: Promise<RacStatus> };
+  private readFailures = 0;
+
+  /** Includes failures served from the stale cache, so polling can back off. */
+  get consecutiveReadFailures(): number {
+    return this.readFailures;
+  }
 
   private readonly cacheMs: number;
   private readonly maxStaleMs: number;
@@ -99,7 +107,24 @@ export class DeviceAdapter {
 
   // --- reads ---------------------------------------------------------------
 
-  async getStatus(): Promise<RacStatus> {
+  getStatus(): Promise<RacStatus> {
+    if (this.pendingRead?.version === this.queueVersion) {
+      return this.pendingRead.promise;
+    }
+    const promise = this.enqueue(() => this.readStatus());
+    const pending = { version: this.queueVersion, promise };
+    this.pendingRead = pending;
+    const clear = () => {
+      if (this.pendingRead === pending) {
+        this.pendingRead = undefined;
+      }
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }
+
+  /** Called only inside the operation queue, including command read-backs. */
+  private async readStatus(): Promise<RacStatus> {
     const now = Date.now();
     if (this.cached && now - this.cachedAt < this.cacheMs) {
       return this.cached;
@@ -124,9 +149,11 @@ export class DeviceAdapter {
       const status = toRacStatus(device, this.statusOptions);
       this.logStatusChange(status);
       this.cached = status;
-      this.cachedAt = now;
+      this.cachedAt = Date.now();
+      this.readFailures = 0;
       return this.cached;
     } catch (error) {
+      this.readFailures++;
       // Serving a slightly stale reading beats flapping the accessory on one
       // dropped packet — but only briefly. Past maxStaleMs the caller must see
       // the failure, or a unit that has been unplugged for an hour still shows
@@ -255,22 +282,23 @@ export class DeviceAdapter {
 
   // --- the write path ------------------------------------------------------
 
-  private applyChange(change: Change): Promise<ApplyResult> {
-    const run = this.queue.then(
-      () => this.write(change),
-      () => this.write(change),
-    );
-    // Keep the chain alive regardless of outcome, but don't leave an unhandled
-    // rejection behind on the internal handle.
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(operation, operation);
     this.queue = run.catch(() => undefined);
     return run;
+  }
+
+  private applyChange(change: Change): Promise<ApplyResult> {
+    // A read requested after this write must not join one queued before it.
+    this.queueVersion++;
+    return this.enqueue(() => this.write(change));
   }
 
   private async write(requested: Change): Promise<ApplyResult> {
     // Resolve before anything reads body or requested — including the dedup key,
     // which must key on the value that will actually go over the wire.
     const change: Change = requested.resolve
-      ? { ...requested, ...requested.resolve(await this.getStatus()) }
+      ? { ...requested, ...requested.resolve(await this.readStatus()) }
       : requested;
 
     // The dedup key MUST include the value. Keying on the target alone makes
@@ -280,10 +308,14 @@ export class DeviceAdapter {
     const now = Date.now();
 
     if (this.lastWrite && this.lastWrite.key === key && now - this.lastWrite.at < this.dedupMs) {
-      this.log.debug(`Skipping duplicate write ${key}`);
-      return { applied: true, requested: change.requested, actual: change.requested, status: await this.getStatus() };
+      const status = await this.readStatus();
+      const actual = change.read(status);
+      if (JSON.stringify(actual) === JSON.stringify(change.requested)) {
+        this.log.debug(`Skipping duplicate write ${key}`);
+        return { applied: true, requested: change.requested, actual, status };
+      }
     }
-    this.lastWrite = { key, at: now };
+    this.lastWrite = null;
 
     const sinceLastWrite = now - this.lastWriteAt;
     if (sinceLastWrite < this.minWriteIntervalMs) {
@@ -303,13 +335,14 @@ export class DeviceAdapter {
     // to assume the local API is more honest. Confirm by reading back.
     await delay(this.settleMs);
     this.invalidate();
-    const status = await this.getStatus();
+    const status = await this.readStatus();
     const actual = change.read(status);
     const applied = JSON.stringify(actual) === JSON.stringify(change.requested);
 
     if (!applied) {
       this.reportRejected(change, actual, status);
     } else {
+      this.lastWrite = { key, at: Date.now() };
       this.log.debug(`${this.label} confirmed ${change.field} = ${format(actual)}.`);
       this.warnedFields.delete(change.field);
     }

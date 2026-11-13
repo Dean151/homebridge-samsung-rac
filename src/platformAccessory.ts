@@ -4,6 +4,7 @@ import type { ApplyResult, DeviceAdapter } from './deviceAdapter';
 import type { RacStatus } from './racStatus';
 import type { ModeSwitchConfig } from './config';
 import { setpointStep } from './temperature';
+import { AdaptivePoller, controlFingerprint } from './adaptivePoller';
 
 /**
  * Device modes that run the unit without driving towards a setpoint. HomeKit's
@@ -90,7 +91,8 @@ export class SamsungRacAccessory {
   /** Guards adoptLateCapabilities() against initialize()'s own first read. */
   private configured = false;
 
-  private pollTimer: NodeJS.Timeout | null = null;
+  private poller?: AdaptivePoller;
+  private lastControlFingerprint?: string;
 
   private minTemp = 16;
   private maxTemp = 30;
@@ -183,7 +185,7 @@ export class SamsungRacAccessory {
   private async initialize(): Promise<void> {
     // Not fatal: updateStatus swallows the failure, the accessory reports
     // "No Response", and the next poll recovers.
-    await this.updateStatus();
+    const healthy = await this.updateStatus();
 
     this.applySetpointRange();
     this.configureTargetStates();
@@ -195,20 +197,17 @@ export class SamsungRacAccessory {
     this.configured = true;
 
     const interval = this.platform.settings.updateInterval;
-    this.pollTimer = setInterval(() => {
-      void this.updateStatus();
-    }, interval * 1000);
-    this.pollTimer.unref();
+    this.poller = new AdaptivePoller(interval * 1000, Boolean(this.platform.settings.adaptivePolling),
+      () => this.updateStatus());
+    this.poller.start(healthy);
 
-    this.platform.log.info(`${this.accessory.displayName}: polling every ${interval}s.`);
+    this.platform.log.info(`${this.accessory.displayName}: polling every ${interval}s`
+      + (this.platform.settings.adaptivePolling ? ', with 2s follow-ups for 30s and offline backoff.' : '.'));
   }
 
   /** Called when Homebridge shuts the platform down. */
   stop(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
+    this.poller?.stop();
     this.adapter.close();
   }
 
@@ -1081,6 +1080,7 @@ export class SamsungRacAccessory {
       this.markResponsive();
       this.adoptLateCapabilities();
       this.push();
+      this.poller?.activity();
     } catch (error) {
       this.platform.log.error(`${this.accessory.displayName}: write failed: ${messageOf(error)}`);
       // Let the next poll decide whether the unit is really gone.
@@ -1090,14 +1090,16 @@ export class SamsungRacAccessory {
 
   // --- polling -------------------------------------------------------------
 
-  private async updateStatus(): Promise<void> {
+  private async updateStatus(): Promise<boolean> {
     try {
       this.status = await this.adapter.getStatus();
       this.markResponsive();
       this.adoptLateCapabilities();
       this.push();
+      return !this.adapter.consecutiveReadFailures;
     } catch (error) {
       this.markUnresponsive(messageOf(error));
+      return false;
     }
   }
 
@@ -1141,6 +1143,12 @@ export class SamsungRacAccessory {
     if (!this.responsive) {
       return;
     }
+
+    const fingerprint = controlFingerprint(this.status);
+    if (this.lastControlFingerprint !== undefined && fingerprint !== this.lastControlFingerprint) {
+      this.poller?.activity();
+    }
+    this.lastControlFingerprint = fingerprint;
 
     try {
       this.service.updateCharacteristic(this.platform.Characteristic.Active, this.activeValue());

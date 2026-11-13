@@ -8,6 +8,12 @@ function logger() {
 }
 
 describe('normaliseConfig', () => {
+  it('keeps adaptive polling opt-in and preserves the configured interval', () => {
+    expect(normaliseConfig({ platform: 'x' }, logger() as never).adaptivePolling).toBe(false);
+    expect(normaliseConfig({ platform: 'x', adaptivePolling: true, updateInterval: 5 } as never, logger() as never))
+      .toMatchObject({ adaptivePolling: true, updateInterval: 5 });
+  });
+
   it('fills in the defaults', () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

@@ -339,3 +339,68 @@ describe('a unit configured in Fahrenheit', () => {
     expect(result).toMatchObject({ applied: true, actual: 22 });
   });
 });
+
+describe('shared read and command queue', () => {
+  it('combines simultaneous status reads into one LAN request', async () => {
+    const h = build();
+    const reads = Array.from({ length: 12 }, () => h.adapter.getStatus());
+    const statuses = await Promise.all(reads);
+    expect(h.get).toHaveBeenCalledTimes(1);
+    expect(statuses.every(status => status === statuses[0])).toBe(true);
+  });
+
+  it('keeps polls out of a command and reuses its fresh read-back', async () => {
+    const h = build({ cacheMs: 1000 });
+    let outstanding = 0;
+    let maximum = 0;
+    const enter = async () => {
+      outstanding++; maximum = Math.max(maximum, outstanding);
+      await new Promise(resolve => setTimeout(resolve, 2));
+      outstanding--;
+    };
+    h.put.mockImplementation(async (_path, body) => { await enter(); h.document.Operation!.power = body.Operation.power; return ''; });
+    h.get.mockImplementation(async () => { await enter(); return { Devices: [h.document] }; });
+    const write = h.adapter.setPower(false);
+    const reads = Array.from({ length: 8 }, () => h.adapter.getStatus());
+    const [result, ...statuses] = await Promise.all([write, ...reads]);
+    expect(result).toMatchObject({ applied: true });
+    expect(statuses.every(status => 'active' in status && status.active === false)).toBe(true);
+    expect(h.put).toHaveBeenCalledTimes(1);
+    expect(h.get).toHaveBeenCalledTimes(1);
+    expect(maximum).toBe(1);
+  });
+
+  it('does not let a read after a queued write join a pre-write read', async () => {
+    const h = build({ cacheMs: 1000 });
+    h.applyWrites((body, document) => { document.Operation!.power = body.Operation.power; });
+    const before = h.adapter.getStatus();
+    const write = h.adapter.setPower(false);
+    const after = h.adapter.getStatus();
+    expect(after).not.toBe(before);
+    const values = await Promise.all([before, write, after]);
+    expect(values[0]).toMatchObject({ active: true });
+    expect(values[2]).toMatchObject({ active: false });
+    expect(h.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports failures even while serving cached state, then clears them on a successful read', async () => {
+    const h = build();
+    await h.adapter.getStatus();
+    h.get.mockRejectedValueOnce(Error('offline'));
+    await h.adapter.getStatus();
+    expect(h.adapter.consecutiveReadFailures).toBe(1);
+    await h.adapter.getStatus();
+    expect(h.adapter.consecutiveReadFailures).toBe(0);
+  });
+
+  it('does not suppress a repeat of a failed or refused write', async () => {
+    const h = build({ dedupMs: 10000 });
+    expect((await h.adapter.setWindDirection('All')).applied).toBe(false);
+    expect((await h.adapter.setWindDirection('All')).applied).toBe(false);
+    expect(h.put).toHaveBeenCalledTimes(2);
+    h.put.mockRejectedValueOnce(Error('offline'));
+    await expect(h.adapter.setPower(false)).rejects.toThrow('offline');
+    await h.adapter.setPower(false);
+    expect(h.put).toHaveBeenCalledTimes(4);
+  });
+});

@@ -159,6 +159,12 @@
         "default": 5,
         "minimum": 1
       },
+      "adaptivePolling": {
+        "title": "Adaptive status polling",
+        "type": "boolean",
+        "default": false,
+        "description": "After a control change or HomeKit command, poll every 2 seconds for 30 seconds. Otherwise use the normal interval, even while off. Failed reads back off progressively to at least 60 seconds; successful reads restore normal polling. Polls never overlap and share the command read-back."
+      },
       "certificateUrl": {
         "title": "Client certificate URL",
         "type": "string",
@@ -191,6 +197,7 @@
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
     "freezeIndoorTemperatureWhenOff",
+    "adaptivePolling",
     {
       "type": "fieldset",
       "title": "Advanced",

@@ -43,6 +43,8 @@ export interface NormalisedConfig {
   devices: DeviceConfig[];
   /** Seconds between status polls. This is a LAN, so it can be brisk. */
   updateInterval: number;
+  /** Brief faster follow-up checks and progressive offline retry delays. */
+  adaptivePolling: boolean;
   requestTimeoutMs: number;
   /** What to write to Wind.direction when HomeKit asks for swing. */
   swingDirection: string;
@@ -226,6 +228,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
   return {
     devices,
     updateInterval: Math.max(5, toNumber(config.updateInterval, DEFAULT_UPDATE_INTERVAL)),
+    adaptivePolling: toBoolean(config.adaptivePolling, 'adaptivePolling', log),
     requestTimeoutMs: Math.max(1, toNumber(config.requestTimeout, DEFAULT_REQUEST_TIMEOUT)) * 1000,
     swingDirection: typeof config.swingDirection === 'string' && config.swingDirection.trim()
       ? config.swingDirection.trim()

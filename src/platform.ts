@@ -216,6 +216,8 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     const adapter = new DeviceAdapter(api, deviceId, this.log, {
       label: displayName,
       outdoorTemperatureUnit: this.settings.outdoorTemperatureUnit,
+      // A three-second cache would swallow every other two-second follow-up.
+      cacheMs: this.settings.adaptivePolling ? 1000 : 3000,
     });
 
     const outdoor = this.settings.outdoorTemperaturePlacement === 'separate'
