@@ -339,3 +339,43 @@ describe('a unit configured in Fahrenheit', () => {
     expect(result).toMatchObject({ applied: true, actual: 22 });
   });
 });
+
+describe('independent swing axes and SPI', () => {
+  it('preserves concurrent axis writes, then turns off only the requested axis', async () => {
+    const h = build();
+    h.applyWrites((body, document) => { document.Wind!.direction = body.Wind.direction; });
+    await Promise.all([h.adapter.setSwingAxis('vertical', true), h.adapter.setSwingAxis('horizontal', true)]);
+    expect(h.document.Wind!.direction).toBe('All');
+    await h.adapter.setSwingAxis('vertical', false);
+    expect(h.document.Wind!.direction).toBe('Left_And_Right');
+    await h.adapter.setSwingAxis('horizontal', false);
+    expect(h.document.Wind!.direction).toBe('Fix');
+  });
+
+  it('reads the current remote state before changing an axis and rejects unknown vocabularies', async () => {
+    const h = build({ cacheMs: 60000 });
+    h.applyWrites((body, document) => { document.Wind!.direction = body.Wind.direction; });
+    await h.adapter.getStatus();
+    h.document.Wind!.direction = 'Left_And_Right';
+    await h.adapter.setSwingAxis('vertical', true);
+    expect(h.document.Wind!.direction).toBe('All');
+    h.document.Wind!.direction = 'Unknown';
+    await expect(h.adapter.setSwingAxis('horizontal', false)).rejects.toThrow('unknown swing');
+    expect(h.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('verifies SPI by read-back and leaves other options intact', async () => {
+    const h = build();
+    h.document.Mode!.options = ['Spi_Off', 'Autoclean_On'];
+    expect((await h.adapter.setSpi(true)).applied).toBe(false);
+    h.applyWrites((body, document) => {
+      document.Mode!.options = ['Autoclean_On', body.Mode.options[0]];
+    });
+    await h.adapter.setSpi(false);
+    expect((await h.adapter.setSpi(true)).applied).toBe(true);
+    expect(h.document.Mode!.options).toEqual(['Autoclean_On', 'Spi_On']);
+    expect(h.put).toHaveBeenLastCalledWith('/devices/0/mode', { Mode: { options: ['Spi_On'] } });
+  });
+
+
+});

@@ -8,6 +8,12 @@ function logger() {
 }
 
 describe('normaliseConfig', () => {
+  it('keeps separate swing and SPI controls opt-in', () => {
+    expect(normaliseConfig({ platform: 'x' }, logger() as never)).toMatchObject({ detailedSwing: false, spiSwitch: false });
+    expect(normaliseConfig({ platform: 'x', detailedSwing: true, spiSwitch: true } as never, logger() as never))
+      .toMatchObject({ detailedSwing: true, spiSwitch: true });
+  });
+
   it('fills in the defaults', () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

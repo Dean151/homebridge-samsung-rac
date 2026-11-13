@@ -32,7 +32,13 @@ const switchLabels: Record<string, string> = {
 };
 
 /** Subtype prefixes for the switches this plugin owns, so it only removes its own. */
-const switchSubtypes = { comode: 'comode-', mode: 'mode-' } as const;
+const switchSubtypes = { comode: 'comode-', mode: 'mode-', spi: 'setting-spi', swing: 'swing-' } as const;
+
+const previousSwitchLabels: Record<string, [string, string]> = {
+  'setting-spi': ['SPI', 'Purify'],
+  'swing-vertical': ['Swing Up Down', 'Vertical swing'],
+  'swing-horizontal': ['Swing Left Right', 'Horizontal swing'],
+};
 
 /**
  * What to call a switch in the log, and the tail of its HomeKit name when the
@@ -55,7 +61,7 @@ interface ModeSwitch {
   /** Stable, and the HomeKit subtype: it is what carries the user's automations. */
   subtype: string;
   /** Which field this switch is backed by, and so which switches it excludes. */
-  group: 'comode' | 'mode';
+  group: 'comode' | 'mode' | 'spi' | 'swing-vertical' | 'swing-horizontal';
   /** Short, for the log. */
   label: string;
   /** What the Home app shows, unless the user has since renamed it there. */
@@ -532,6 +538,34 @@ export class SamsungRacAccessory {
   private modeSwitchSpecs(): ModeSwitch[] {
     const specs: ModeSwitch[] = [];
 
+    if (this.platform.settings.spiSwitch) {
+      specs.push({
+        subtype: switchSubtypes.spi,
+        group: 'spi',
+        label: 'Purify',
+        displayName: `${this.accessory.displayName} Purify`,
+        available: status => ['On', 'Off'].includes(status.options.Spi),
+        isOn: status => status.options.Spi === 'On',
+        write: on => () => this.adapter.setSpi(on),
+      });
+    }
+    if (this.platform.settings.detailedSwing) {
+      for (const axis of ['vertical', 'horizontal'] as const) {
+        const label = axis === 'vertical' ? 'Vertical swing' : 'Horizontal swing';
+        specs.push({
+          subtype: `${switchSubtypes.swing}${axis}`,
+          group: `swing-${axis}`,
+          label,
+          displayName: `${this.accessory.displayName} ${label}`,
+          available: status => ['Fix', 'Up_And_Low', 'Left_And_Right', 'All'].includes(status.windDirection ?? ''),
+          isOn: status => status.windDirection === 'All'
+            || status.windDirection === (axis === 'vertical' ? 'Up_And_Low' : 'Left_And_Right'),
+          write: on => () => this.adapter.setSwingAxis(axis, on),
+        });
+      }
+    }
+
+
     for (const entry of this.platform.settings.convenienceModes) {
       const name = entry.value;
       specs.push({
@@ -608,7 +642,8 @@ export class SamsungRacAccessory {
     // touched, hence the subtype prefixes.
     for (const service of [...this.accessory.services]) {
       const subtype = service.subtype ?? '';
-      const ours = subtype.startsWith(switchSubtypes.comode) || subtype.startsWith(switchSubtypes.mode);
+      const ours = subtype.startsWith(switchSubtypes.comode) || subtype.startsWith(switchSubtypes.mode)
+        || subtype === switchSubtypes.spi || subtype.startsWith(switchSubtypes.swing);
       if (service.UUID === this.platform.Service.Switch.UUID && ours && !wanted.has(subtype)) {
         this.platform.log.info(`${this.accessory.displayName}: removing the switch for '${subtype}'.`);
         this.accessory.removeService(service);
@@ -1028,7 +1063,7 @@ export class SamsungRacAccessory {
       // the second and a half it takes to write and read back. If the unit then
       // refuses the change, the read-back puts them back where they were.
       this.excludeSiblings(spec);
-    } else if (!spec.isOn(this.status)) {
+    } else if (!spec.isOn(this.status) && !spec.group.startsWith('swing-')) {
       // Switching off something that is not on must not touch the unit. A
       // scene that turns every switch in the group off would otherwise send one
       // write per switch, and each of them would cancel the mode a later switch
@@ -1228,6 +1263,16 @@ export class SamsungRacAccessory {
    */
   private nameService(host: PlatformAccessory, service: Service, key: string, fallback: string): void {
     const names = serviceNamesOf(host);
+    const previous = previousSwitchLabels[key];
+    const migrations = host.context.samsungNameMigrations ??= {};
+    if (previous && !migrations[key]) {
+      if (names[key] === previous[0] || names[key] === `${host.displayName} ${previous[0]}`) {
+        names[key] = names[key] === previous[0] && fallback === `${host.displayName} ${previous[1]}`
+          ? previous[1] : fallback;
+      }
+      migrations[key] = true;
+      this.platform.api.updatePlatformAccessories([host]);
+    }
     const name = names[key] ?? fallback;
 
     service.setCharacteristic(this.platform.Characteristic.Name, name);

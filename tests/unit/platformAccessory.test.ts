@@ -30,6 +30,7 @@ const baseStatus: RacStatus = {
 };
 
 interface Harness {
+  stop: () => void;
   accessory: FakeAccessory;
   heaterCooler: FakeService;
   adapter: Record<string, jest.Mock>;
@@ -78,6 +79,8 @@ async function build(options: {
     setSpeedLevel: jest.fn(applied(2)),
     setWindDirection: jest.fn(applied('Up_And_Low')),
     setComode: jest.fn(applied('Quiet')),
+    setSpi: jest.fn(applied('On')),
+    setSwingAxis: jest.fn(applied('All')),
     close: jest.fn(),
   };
 
@@ -110,11 +113,12 @@ async function build(options: {
     },
   };
 
-  await SamsungRacAccessory.create(
+  const instance = await SamsungRacAccessory.create(
     platform as never, accessory as never, adapter as never, outdoor as never,
   );
 
   return {
+    stop: () => instance.stop(),
     accessory,
     heaterCooler: accessory.getService(Service.HeaterCooler) as FakeService,
     adapter: adapter as unknown as Record<string, jest.Mock>,
@@ -147,6 +151,67 @@ describe('SamsungRacAccessory', () => {
   afterEach(() => {
     jest.clearAllTimers();
     jest.useRealTimers();
+  });
+
+  describe('detailed swing and SPI switches', () => {
+    it('migrates earlier switch defaults once and preserves custom Home names', async () => {
+      const cached = new FakeAccessory();
+      cached.context.serviceNames = {
+        'setting-spi': 'My purifier', 'swing-horizontal': 'Test AC Swing Left Right', 'swing-vertical': 'Swing Up Down',
+      };
+      const options = { accessory: cached, settings: { spiSwitch: true, detailedSwing: true },
+        status: { options: { Spi: 'Off' }, windDirection: 'Fix' } };
+      const first = await build(options);
+      const service = (key: string) => cached.services.find(s => s.subtype === key)!;
+      const name = (key: string) => service(key).getCharacteristic(Characteristic.ConfiguredName);
+      expect(name('setting-spi').value).toBe('My purifier');
+      expect(name('swing-horizontal').value).toBe('Test AC Horizontal swing');
+      expect(name('swing-vertical').value).toBe('Vertical swing');
+      const vertical = service('swing-vertical');
+      await name('swing-vertical').setHandler?.('Swing Up Down');
+      first.stop();
+      const second = await build(options);
+      expect(service('swing-vertical')).toBe(vertical);
+      expect(name('swing-vertical').value).toBe('Swing Up Down');
+      second.stop();
+    });
+
+    const on = (accessory: FakeAccessory, subtype: string) =>
+      accessory.getServiceById(Service.Switch, subtype)?.getCharacteristic(Characteristic.On);
+
+    it('keeps both axes on for All, reflects the remote and writes axes independently', async () => {
+      const h = await build({ settings: { detailedSwing: true }, status: { windDirection: 'All' } });
+      expect(on(h.accessory, 'swing-vertical')?.getHandler?.()).toBe(true);
+      expect(on(h.accessory, 'swing-horizontal')?.getHandler?.()).toBe(true);
+      await on(h.accessory, 'swing-vertical')?.setHandler?.(false);
+      expect(h.adapter.setSwingAxis).toHaveBeenCalledWith('vertical', false);
+      h.setStatus({ windDirection: 'Left_And_Right' });
+      await pollOnce(h.adapter.getStatus);
+      expect(on(h.accessory, 'swing-vertical')?.value).toBe(false);
+      expect(on(h.accessory, 'swing-horizontal')?.value).toBe(true);
+      expect(h.heaterCooler.getCharacteristic(Characteristic.SwingMode).value).toBe(1);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+    });
+
+    it('publishes SPI only when the setting is reported, and keeps its saved state while off', async () => {
+      const h = await build({ settings: { spiSwitch: true }, status: { active: false, options: { Spi: 'On' } } });
+      expect(on(h.accessory, 'setting-spi')?.getHandler?.()).toBe(true);
+      await on(h.accessory, 'setting-spi')?.setHandler?.(false);
+      expect(h.adapter.setSpi).toHaveBeenCalledWith(false);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      const unsupported = await build({ settings: { spiSwitch: true } });
+      expect(on(unsupported.accessory, 'setting-spi')).toBeUndefined();
+    });
+
+    it('removes disabled optional switches without disturbing the main AC', async () => {
+      const h = await build({ settings: { detailedSwing: true, spiSwitch: true }, status: { options: { Spi: 'Off' } } });
+      await build({ accessory: h.accessory });
+      expect(on(h.accessory, 'swing-vertical')).toBeUndefined();
+      expect(on(h.accessory, 'swing-horizontal')).toBeUndefined();
+      expect(on(h.accessory, 'setting-spi')).toBeUndefined();
+      expect(h.accessory.getService(Service.HeaterCooler)).toBe(h.heaterCooler);
+    });
+
   });
 
   describe('temperature', () => {

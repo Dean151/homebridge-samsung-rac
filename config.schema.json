@@ -159,6 +159,18 @@
         "default": 5,
         "minimum": 1
       },
+      "detailedSwing": {
+        "title": "Separate swing axes",
+        "type": "boolean",
+        "default": false,
+        "description": "Adds Vertical swing and Horizontal swing switches. Both on selects All; both off selects Fix. Enable only after confirming all four directions on your model. Changes do not power on the AC."
+      },
+      "spiSwitch": {
+        "title": "Purify switch",
+        "type": "boolean",
+        "default": false,
+        "description": "Adds the Samsung Purify control using SPI (S-Plasma Ion) on/off when reported by the AC. Enable only after checking command support. The switch reflects the setting, not measured air quality or confirmation that ionizer hardware is installed."
+      },
       "certificateUrl": {
         "title": "Client certificate URL",
         "type": "string",
@@ -191,6 +203,8 @@
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
     "freezeIndoorTemperatureWhenOff",
+    "detailedSwing",
+    "spiSwitch",
     {
       "type": "fieldset",
       "title": "Advanced",

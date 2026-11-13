@@ -353,3 +353,25 @@ npm run watch    # rebuild and restart Homebridge on change
 Unit tests never touch the network: `nock` is locked down and `fetch` is replaced
 outright. The fixture in `tests/fixtures/devices.json` is a real capture from the
 reference unit.
+
+
+## Independent swing and Purify controls
+
+Set `"detailedSwing": true` and/or `"spiSwitch": true` to enable these controls.
+Both default to false.
+
+**Swing:** Vertical swing and Horizontal swing are independent switches. Both on sends `All`;
+both off sends `Fix`. Disabling one axis preserves the other. The main AC swing
+control still enables the configured `swingDirection` or disables both axes.
+These are oscillation controls, not fixed vane-angle selectors. Settings do not
+power the AC on; firmware may ignore changes while it is off. All four direction
+values were confirmed by read-back on three TP6X_RAC_17K units in fan-only mode.
+Other model families can accept fewer directions, so this remains opt-in.
+
+**Purify (SPI):** The switch reflects the Samsung `Spi_On` / `Spi_Off` setting, including
+its retained value while the AC is off. Both values were confirmed by local
+read-back on all three tested units. This verifies the setting, not the presence
+or output of ionizer hardware; no air-quality measurement is implied.
+
+Earlier SPI and swing default names migrate once to Purify, Vertical swing and
+Horizontal swing. Custom Home names and service identities are preserved.
