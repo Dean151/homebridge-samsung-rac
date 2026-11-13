@@ -89,6 +89,8 @@ export interface NormalisedConfig {
    * the Samsung app; the plugin reports them as Auto and leaves them alone.
    */
   modeSwitches: ModeSwitchConfig[];
+  /** Optional local countdown switches; minutes, one countdown per AC. */
+  shutdownTimers: number[];
   certificateUrl?: string;
 }
 
@@ -239,10 +241,27 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       config.freezeIndoorTemperatureWhenOff, 'freezeIndoorTemperatureWhenOff', log),
     convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
+    shutdownTimers: toShutdownTimers(config.shutdownTimers, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
   };
+}
+
+function toShutdownTimers(value: unknown, log: Logging): number[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    log.warn('Ignoring shutdownTimers: expected an array of whole minutes.');
+    return [];
+  }
+  const valid = value.filter((minutes): minutes is number =>
+    typeof minutes === 'number' && Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440);
+  if (valid.length !== value.length) {
+    log.warn('Ignoring invalid shutoff durations; use whole minutes from 1 to 1440.');
+  }
+  return [...new Set(valid)].sort((a, b) => a - b).slice(0, 8);
 }
 
 /**

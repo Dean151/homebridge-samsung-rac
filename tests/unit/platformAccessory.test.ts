@@ -78,6 +78,7 @@ async function build(options: {
     setSpeedLevel: jest.fn(applied(2)),
     setWindDirection: jest.fn(applied('Up_And_Low')),
     setComode: jest.fn(applied('Quiet')),
+    invalidate: jest.fn(),
     close: jest.fn(),
   };
 
@@ -147,6 +148,113 @@ describe('SamsungRacAccessory', () => {
   afterEach(() => {
     jest.clearAllTimers();
     jest.useRealTimers();
+  });
+
+  describe('local shutoff switches', () => {
+    const setting = (accessory: FakeAccessory, minutes: number) =>
+      accessory.getServiceById(Service.Switch, `shutdown-${minutes}`)?.getCharacteristic(Characteristic.On);
+
+    it('selects one countdown, cancels without switching off, and ignores inactive siblings', async () => {
+      const h = await build({ settings: { shutdownTimers: [30, 60] } });
+      await setting(h.accessory, 30)?.setHandler?.(true);
+      expect(h.accessory.context.shutdownTimer).toMatchObject({ minutes: 30 });
+      expect(setting(h.accessory, 30)?.getHandler?.()).toBe(true);
+      await setting(h.accessory, 60)?.setHandler?.(true);
+      expect(setting(h.accessory, 30)?.value).toBe(false);
+      await setting(h.accessory, 30)?.setHandler?.(false);
+      expect(setting(h.accessory, 60)?.getHandler?.()).toBe(true);
+      await setting(h.accessory, 60)?.setHandler?.(false);
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+      await jest.advanceTimersByTimeAsync(3600000);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+    });
+
+    it('never starts an idle AC, and cancels when a poll observes manual power-off', async () => {
+      const h = await build({ status: { active: false }, settings: { shutdownTimers: [30] } });
+      await setting(h.accessory, 30)?.setHandler?.(true);
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      h.setStatus({ active: true });
+      await setting(h.accessory, 30)?.setHandler?.(true);
+      h.setStatus({ active: false });
+      // Trigger the normal getter refresh via the existing polling interval.
+      await pollOnce(h.adapter.getStatus);
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+    });
+
+    it('uses a fresh read and a verified power-off at the deadline', async () => {
+      const h = await build({ settings: { shutdownTimers: [1] } });
+      h.adapter.setPower.mockImplementation(async () => ({
+        applied: true, status: { ...baseStatus, active: false },
+      }));
+      await setting(h.accessory, 1)?.setHandler?.(true);
+      h.adapter.invalidate.mockClear();
+      await jest.advanceTimersByTimeAsync(60000);
+      expect(h.adapter.invalidate).toHaveBeenCalled();
+      expect(h.adapter.setPower).toHaveBeenCalledWith(false);
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+      expect(setting(h.accessory, 1)?.value).toBe(false);
+    });
+
+    it('does not issue a blind off when the fresh read fails', async () => {
+      const h = await build({ settings: { shutdownTimers: [1] } });
+      await setting(h.accessory, 1)?.setHandler?.(true);
+      h.adapter.getStatus.mockRejectedValueOnce(new Error('offline'));
+      await jest.advanceTimersByTimeAsync(60000);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(setting(h.accessory, 1)?.getHandler?.()).toBe(true);
+      h.setStatus({ active: false });
+      await jest.advanceTimersByTimeAsync(30000);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+    });
+
+    it('does not arm from cached status after a failed LAN read', async () => {
+      const h = await build({ settings: { shutdownTimers: [1] } });
+      Object.defineProperty(h.adapter, 'consecutiveReadFailures', { value: 1 });
+      await expect(setting(h.accessory, 1)?.setHandler?.(true)).rejects.toBeInstanceOf(FakeHapStatusError);
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+    });
+
+    it('retries a deadline without writing when a failed read returns cached status', async () => {
+      const h = await build({ settings: { shutdownTimers: [1] } });
+      await setting(h.accessory, 1)?.setHandler?.(true);
+      Object.defineProperty(h.adapter, 'consecutiveReadFailures', { value: 1, configurable: true });
+      await jest.advanceTimersByTimeAsync(60000);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(setting(h.accessory, 1)?.getHandler?.()).toBe(true);
+      Object.defineProperty(h.adapter, 'consecutiveReadFailures', { value: 0 });
+      h.adapter.setPower.mockResolvedValue({ applied: true, status: { ...baseStatus, active: false } });
+      await jest.advanceTimersByTimeAsync(30000);
+      expect(h.adapter.setPower).toHaveBeenCalledWith(false);
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+    });
+
+    it('does not arm after a cancellation overtakes an in-flight status read', async () => {
+      const h = await build({ settings: { shutdownTimers: [30] } });
+      let finish!: (value: RacStatus) => void;
+      h.adapter.getStatus.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const pending = setting(h.accessory, 30)?.setHandler?.(true);
+      await setting(h.accessory, 30)?.setHandler?.(false);
+      finish(baseStatus);
+      await pending;
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+    });
+
+    it('resumes the saved deadline and removes only disabled timer services', async () => {
+      const cached = new FakeAccessory();
+      cached.context.shutdownTimer = { minutes: 30, deadline: Date.now() + 1000 };
+      cached.addService(Service.Switch, 'Old timer', 'shutdown-60');
+      cached.addService(Service.Switch, 'Unrelated', 'not-ours');
+      const h = await build({ accessory: cached, settings: { shutdownTimers: [30] } });
+      expect(setting(h.accessory, 30)?.getHandler?.()).toBe(true);
+      expect(h.accessory.getServiceById(Service.Switch, 'shutdown-60')).toBeUndefined();
+      expect(h.accessory.getServiceById(Service.Switch, 'not-ours')).toBeDefined();
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(h.adapter.setPower).toHaveBeenCalledWith(false);
+    });
   });
 
   describe('temperature', () => {
