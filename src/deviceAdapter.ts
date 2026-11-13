@@ -253,6 +253,40 @@ export class DeviceAdapter {
     });
   }
 
+  setSpi(on: boolean): Promise<ApplyResult> {
+    const value = on ? 'On' : 'Off';
+    return this.applyChange({
+      field: 'Mode.options.Spi',
+      resource: `/devices/${this.deviceId}/mode`,
+      body: { Mode: { options: [`Spi_${value}`] } },
+      requested: value,
+      read: (status) => status.options.Spi,
+    });
+  }
+
+  /** Resolve inside the queue so simultaneous axis changes preserve each other. */
+  setSwingAxis(axis: 'vertical' | 'horizontal', on: boolean): Promise<ApplyResult> {
+    const direction = (current: string | undefined) => {
+      if (!['Fix', 'Up_And_Low', 'Left_And_Right', 'All'].includes(current ?? '')) {
+        throw new Error('The unit reports an unknown swing direction.');
+      }
+      const vertical = axis === 'vertical' ? on : current === 'Up_And_Low' || current === 'All';
+      const horizontal = axis === 'horizontal' ? on : current === 'Left_And_Right' || current === 'All';
+      return vertical ? (horizontal ? 'All' : 'Up_And_Low') : (horizontal ? 'Left_And_Right' : 'Fix');
+    };
+    return this.applyChange({
+      field: 'Wind.direction',
+      resource: `/devices/${this.deviceId}/wind`,
+      body: {},
+      requested: undefined,
+      read: status => status.windDirection,
+      resolve: status => {
+        const requested = direction(status.windDirection);
+        return { requested, body: { Wind: { direction: requested } } };
+      },
+    });
+  }
+
   // --- the write path ------------------------------------------------------
 
   private applyChange(change: Change): Promise<ApplyResult> {
@@ -269,6 +303,9 @@ export class DeviceAdapter {
   private async write(requested: Change): Promise<ApplyResult> {
     // Resolve before anything reads body or requested — including the dedup key,
     // which must key on the value that will actually go over the wire.
+    if (requested.resolve && requested.field === 'Wind.direction') {
+      this.invalidate();
+    }
     const change: Change = requested.resolve
       ? { ...requested, ...requested.resolve(await this.getStatus()) }
       : requested;
