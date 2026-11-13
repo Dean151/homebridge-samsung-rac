@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import { readFileOrNull, writeFileAtomic } from './atomic';
 import { storageDirectory } from './certificate';
+import { normaliseDeviceUuid } from '../discovery/ssdp';
 
 /**
  * Device tokens live beside the certificate rather than in config.json.
@@ -52,6 +53,27 @@ export class TokenStore {
     return (await this.all())[host] ?? null;
   }
 
+  /** Find existing pairings after DHCP moves without rewriting or exposing credentials. */
+  async getForDevice(host: string, deviceUuid?: string): Promise<DeviceTokenRecord | null> {
+    if (!deviceUuid) {
+      return this.get(host);
+    }
+    const uuid = normaliseDeviceUuid(deviceUuid);
+    if (!uuid) {
+      return null;
+    }
+    const all = await this.all();
+    const matches = Object.values(all).filter(record => record && typeof record.token === 'string'
+      && normaliseDeviceUuid(record.deviceUuid) === uuid);
+    // A later pairing may replace an old token still stored under a previous IP.
+    matches.sort((a, b) => (b.pairedAt ?? '').localeCompare(a.pairedAt ?? ''));
+    if (matches.length) {
+      return matches[0];
+    }
+    const legacy = all[host];
+    return legacy && !legacy.deviceUuid ? legacy : null;
+  }
+
   async set(host: string, record: DeviceTokenRecord): Promise<void> {
     const all = await this.all();
     all[host] = { ...record, pairedAt: record.pairedAt ?? new Date().toISOString() };
@@ -64,6 +86,23 @@ export class TokenStore {
       return;
     }
     delete all[host];
+    await writeFileAtomic(this.filePath, JSON.stringify(all, null, 2));
+  }
+
+  async removeForDevice(host: string, deviceUuid?: string): Promise<void> {
+    if (!deviceUuid) {
+      return this.remove(host);
+    }
+    const uuid = normaliseDeviceUuid(deviceUuid);
+    if (!uuid) {
+      throw new Error('Invalid device UUID.');
+    }
+    const all = await this.all();
+    for (const [key, record] of Object.entries(all)) {
+      if (normaliseDeviceUuid(record?.deviceUuid) === uuid || (key === host && record && !record.deviceUuid)) {
+        delete all[key];
+      }
+    }
     await writeFileAtomic(this.filePath, JSON.stringify(all, null, 2));
   }
 }

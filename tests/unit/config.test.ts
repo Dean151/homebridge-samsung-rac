@@ -8,6 +8,19 @@ function logger() {
 }
 
 describe('normaliseConfig', () => {
+  it('opts into discovery with a normalised UUID and rejects duplicates or malformed identities', () => {
+    const uuid = 'C097276C-06FB-0000-0000-000000000000';
+    const settings = normaliseConfig({ platform: 'x', devices: [
+      { host: '192.168.1.227', deviceUuid: 'uuid:' + uuid },
+      { host: '192.168.1.228', deviceUuid: uuid.toLowerCase() },
+      { host: '192.168.1.229', deviceUuid: 'not-a-uuid' },
+      { host: '192.168.1.230' },
+    ] } as never, logger() as never);
+    expect(settings.devices).toHaveLength(2);
+    expect(settings.devices[0].deviceUuid).toBe(uuid.toLowerCase());
+    expect(settings.devices[1].deviceUuid).toBeUndefined();
+  });
+
   it('fills in the defaults', () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({
