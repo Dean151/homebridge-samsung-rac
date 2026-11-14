@@ -562,6 +562,15 @@ describe('SamsungRacAccessory', () => {
         .toBe(21.7);
     });
 
+    it('accepts a reading below freezing, which HAP\'s default range refuses', async () => {
+      const { accessory } = await build({ status: { outdoorTemperature: -7.2 } });
+      const characteristic = accessory.getService(Service.TemperatureSensor)
+        ?.findCharacteristic(Characteristic.CurrentTemperature);
+
+      expect(characteristic?.props).toMatchObject({ minValue: -100, maxValue: 100 });
+      expect(characteristic?.getHandler?.()).toBe(-7.2);
+    });
+
     it('leaves it unlinked, so it reads as a tile rather than part of the control', async () => {
       const { accessory, heaterCooler } = await build({ status: { outdoorTemperature: 21.7 } });
 

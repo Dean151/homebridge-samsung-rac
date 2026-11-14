@@ -488,7 +488,11 @@ export class SamsungRacAccessory {
 
     const service = existing ?? host.addService(this.platform.Service.TemperatureSensor);
     this.nameService(host, service, 'outdoor', `${this.accessory.displayName} Outdoor`);
+    // HAP's CurrentTemperature stops at 0 °C unless told otherwise, which is
+    // fine for a room and wrong for outdoors: a winter reading below zero
+    // would be refused rather than shown.
     service.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+      .setProps({ minValue: -100, maxValue: 100, minStep: 0.1 })
       .onGet(this.getOutdoorTemperature.bind(this));
 
     // Deliberately NOT linked to the HeaterCooler, unlike the filter. A linked

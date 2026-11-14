@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The outdoor temperature sensor could not show a reading below 0 °C. HAP's
+  `CurrentTemperature` defaults to a 0–100 °C range, which suits a room and not
+  a winter outdoors, so a sub-zero reading was refused. The sensor now accepts
+  −100 to 100 °C. Spotted by @m1h4 in #7.
+
 ## [0.4.1] - 2026-09-29
 
 ### Fixed
