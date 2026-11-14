@@ -39,7 +39,7 @@
                 { "title": "This unit can heat", "enum": ["on"] },
                 { "title": "This unit cannot heat", "enum": ["off"] }
               ],
-              "description": "Samsung units under-report what they support: the reference unit leaves Heat out of its mode list even while it is heating. Detection reads the unit's rated heating capacity instead, which is right for every unit seen so far. Set this only if the Home app offers a Heat button that does nothing, or hides one that should work."
+              "description": "Samsung units under-report what they support, and can leave Heat out of their mode list even while heating. Detection reads the unit's rated heating capacity instead. Set this only if the Home app offers a Heat button that does nothing, or hides one that should work."
             }
           }
         }
@@ -61,12 +61,12 @@
           { "title": "Vertical", "enum": ["Vertical"] },
           { "title": "Swing up/down", "enum": ["SwingUD"] }
         ],
-        "description": "What to set the vane to when swing is switched on in HomeKit. On a TP6X_RAC_16K only Up_And_Low works: Vertical and SwingUD are rejected outright, and All is accepted and then ignored. The others are kept for units that differ; the log says if yours refuses the one you pick."
+        "description": "What to set the vane to when swing is switched on in HomeKit. Up_And_Low is the safe choice; the others are there for units that accept them. If yours refuses the one you pick, the log says so."
       },
       "convenienceModes": {
         "title": "Convenience mode switches",
         "type": "array",
-        "description": "Adds a switch to the Home app for each convenience mode you add \u2014 the family WindFree belongs to. None are added by default: the unit reports the mode it is in but never the ones it would accept, so there is nothing to detect from, and a switch for a name your model does not know would refuse to stay on. The six offered here are the ones a TP6X_RAC_16K applies, confirmed by read-back. Only one convenience mode runs at a time, so switching one on switches the others off. Which of them your unit calls WindFree is not something it says \u2014 try them, then give the one that is it a name.",
+        "description": "Adds a switch to the Home app for each convenience mode you add \u2014 the family WindFree belongs to. None are added by default: the unit reports the mode it is in but never the ones it would accept, so there is nothing to detect from, and a switch for a name your model does not know would refuse to stay on. The six offered here are known to work on at least one unit, confirmed by read-back. Only one convenience mode runs at a time, so switching one on switches the others off. Which of them your unit calls WindFree is not something it says \u2014 try them, then give the one that is it a name.",
         "items": {
           "type": "object",
           "properties": {
@@ -134,11 +134,11 @@
         "type": "string",
         "default": "fahrenheit",
         "oneOf": [
-          { "title": "Fahrenheit (confirmed on TP6X_RAC_16K)", "enum": ["fahrenheit"] },
+          { "title": "Fahrenheit (default)", "enum": ["fahrenheit"] },
           { "title": "Celsius", "enum": ["celsius"] }
         ],
         "condition": { "functionBody": "return model.outdoorTemperature !== 'off';" },
-        "description": "The scale the unit reports its outdoor sensor in. Stated nowhere in what the unit reports, and independent of the unit's own setting: a TP6X_RAC_16K reports itself in Celsius and this in Fahrenheit, measured against a known outdoor temperature. Fahrenheit is the default for that reason. If your tile reads far too cold, your unit reports Celsius here \u2014 switch it."
+        "description": "The scale the unit reports its outdoor sensor in. The unit never says which, and it can differ from the unit's own setting. If the tile reads far too cold, your unit reports Celsius here: switch it."
       },
       "hideOutdoorTemperatureWhenOff": {
         "title": "Hide the outdoor reading while the unit is off",
