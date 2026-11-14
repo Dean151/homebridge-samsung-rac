@@ -228,6 +228,7 @@
       const config = await currentConfig();
       const status = await homebridge.request('/status', {
         hosts: await hosts(),
+        devices: (config.devices || []).map(({ host, deviceUuid }) => ({ host, deviceUuid })),
         certificateUrl: config.certificateUrl,
       });
       render(status);
@@ -252,7 +253,8 @@
       const config = await currentConfig();
       homebridge.showSpinner();
       try {
-        const device = await homebridge.request('/device/test', { host, certificateUrl: config.certificateUrl });
+        const deviceUuid = (config.devices || []).find(device => device.host === host)?.deviceUuid;
+        const device = await homebridge.request('/device/test', { host, deviceUuid, certificateUrl: config.certificateUrl });
         homebridge.toast.success(
           `${device.model || 'Air conditioner'} answered, currently ${device.power || 'unknown'}.`, TITLE,
         );
@@ -269,7 +271,9 @@
       }
       homebridge.showSpinner();
       try {
-        await homebridge.request('/token/forget', { host });
+        const config = await currentConfig();
+        const deviceUuid = (config.devices || []).find(device => device.host === host)?.deviceUuid;
+        await homebridge.request('/token/forget', { host, deviceUuid });
         await refresh();
         homebridge.toast.success('Token removed.', TITLE);
       } catch (error) {

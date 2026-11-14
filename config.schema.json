@@ -23,7 +23,7 @@
               "type": "string",
               "required": true,
               "format": "ipv4",
-              "description": "The unit's address on your network. Give it a fixed DHCP lease on your router — the plugin cannot follow it if it moves."
+              "description": "Current or last-known address. Without a device UUID below, reserve this address in your router. With a UUID, it is a fallback and discovery hint."
             },
             "token": {
               "title": "Device token (optional)",
@@ -40,6 +40,11 @@
                 { "title": "This unit cannot heat", "enum": ["off"] }
               ],
               "description": "Samsung units under-report what they support: the reference unit leaves Heat out of its mode list even while it is heating. Detection reads the unit's rated heating capacity instead, which is right for every unit seen so far. Set this only if the Home app offers a Heat button that does nothing, or hides one that should work."
+            },
+            "deviceUuid": {
+              "title": "Device UUID for automatic discovery (optional)",
+              "type": "string",
+              "description": "Use the UUID returned by this unit's local API or pairing record to follow address changes over SSDP. Leave empty to use only the configured IP address."
             }
           }
         }
@@ -171,7 +176,7 @@
       "key": "devices",
       "type": "array",
       "buttonText": "Add an air conditioner",
-      "items": ["devices[].name", "devices[].host", "devices[].token", "devices[].heating"]
+      "items": ["devices[].name", "devices[].host", "devices[].deviceUuid", "devices[].token", "devices[].heating"]
     },
     "updateInterval",
     "swingDirection",

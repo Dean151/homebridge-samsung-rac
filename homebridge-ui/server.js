@@ -53,9 +53,9 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
    * One rich state object rather than a boolean, so the card can render every
    * state it has without a second round trip.
    */
-  async status({ hosts, certificateUrl } = {}) {
+  async status({ hosts, devices, certificateUrl } = {}) {
     const store = this.certificates(certificateUrl);
-    const tokens = await this.tokens().all();
+    const tokens = this.tokens();
 
     return {
       certificate: {
@@ -64,16 +64,17 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
       },
       storagePath: this.storagePath,
       pairing: this.pairing ? this.pairing.host : null,
-      devices: (hosts || []).map((host) => {
-        const record = tokens[host];
+      devices: await Promise.all((devices || (hosts || []).map(host => ({ host }))).map(async ({ host, deviceUuid }) => {
+        const record = await tokens.getForDevice(host, deviceUuid);
         return {
           host,
           paired: Boolean(record && record.token),
           model: record ? record.model : undefined,
           name: record ? record.name : undefined,
           pairedAt: record ? record.pairedAt : undefined,
+          deviceUuid: record ? record.deviceUuid : undefined,
         };
-      }),
+      })),
     };
   }
 
@@ -87,7 +88,7 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
     return { stored: true, path: store.path };
   }
 
-  async testDevice({ host, certificateUrl } = {}) {
+  async testDevice({ host, deviceUuid, certificateUrl } = {}) {
     if (!host) {
       throw new RequestError('Enter the air conditioner\'s IP address first.', { status: 400 });
     }
@@ -96,8 +97,12 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
     const { devicesFrom } = plugin('racStatus');
 
     const pem = await this.loadCertificate(certificateUrl);
-    const record = await this.tokens().get(host);
-    const api = new LocalApi({ host, pem, token: record ? record.token : undefined, timeoutMs: 8000 });
+    const record = await this.tokens().getForDevice(host, deviceUuid);
+    const options = { host, pem, token: record ? record.token : undefined, timeoutMs: 5000 };
+    const { SsdpDiscovery } = plugin('discovery/ssdp');
+    const { DiscoveredApi } = plugin('transport/discoveredApi');
+    const discovery = deviceUuid ? new SsdpDiscovery([{ uuid: deviceUuid, host }]) : null;
+    const api = discovery ? new DiscoveredApi(options, deviceUuid, discovery) : new LocalApi(options);
 
     try {
       const device = devicesFrom(await api.get('/devices'))[0];
@@ -117,6 +122,7 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
       throw new RequestError(error.message, { status: 502 });
     } finally {
       api.close();
+      discovery?.close();
     }
   }
 
@@ -175,11 +181,11 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
     return { paired: true };
   }
 
-  async tokenForget({ host } = {}) {
+  async tokenForget({ host, deviceUuid } = {}) {
     if (!host) {
       throw new RequestError('No air conditioner given.', { status: 400 });
     }
-    await this.tokens().remove(host);
+    await this.tokens().removeForDevice(host, deviceUuid);
     return { paired: false };
   }
 
