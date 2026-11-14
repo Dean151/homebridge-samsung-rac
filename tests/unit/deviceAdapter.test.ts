@@ -339,3 +339,87 @@ describe('a unit configured in Fahrenheit', () => {
     expect(result).toMatchObject({ applied: true, actual: 22 });
   });
 });
+
+describe('native Good Sleep', () => {
+  const setup = () => {
+    const h = build();
+    h.document.description = 'TP6X_RAC_17K';
+    h.document.Mode!.options = ['Comode_Off', 'Sleep_0'];
+    let pendingDuration = '2';
+    let preset = 'Off';
+    h.applyWrites((body, doc) => {
+      if (body.Operation) { doc.Operation = body.Operation; return; }
+      const token = body.Mode.options[0] as string;
+      if (token.startsWith('Sleep_')) { pendingDuration = token.slice(6); }
+      if (token.startsWith('Comode_')) { preset = token.slice(7); }
+      doc.Mode!.options = ['Comode_' + preset, 'Sleep_' + (preset === 'Sleep' ? pendingDuration : '0')];
+    });
+    return h;
+  };
+
+  it.each([60, 120])('starts %i minutes atomically and confirms the duration and power', async minutes => {
+    const h = setup();
+    const start = h.adapter.setGoodSleep(minutes);
+    const stop = h.adapter.setPower(false);
+    const poll = h.adapter.getStatus();
+    await expect(start).resolves.toMatchObject({ applied: true, actual: { active: true, comode: 'Sleep', sleep: String(minutes / 30) } });
+    await stop;
+    await expect(poll).resolves.toMatchObject({ active: false });
+    expect(h.put.mock.calls.map(call => call[1])).toEqual([
+      { Mode: { options: ['Sleep_' + minutes / 30] } },
+      { Mode: { options: ['Comode_Sleep'] } },
+      { Mode: { options: ['Sleep_' + minutes / 30] } },
+      { Operation: { power: 'Off' } },
+    ]);
+  });
+
+  it('cancels without the Sleep_0 command that shuts the AC down', async () => {
+    const h = setup();
+    await h.adapter.setGoodSleep(60);
+    h.put.mockClear();
+    await expect(h.adapter.setGoodSleep(null)).resolves.toMatchObject({ applied: true, actual: { active: true, comode: 'Off', sleep: '0' } });
+    expect(h.put).toHaveBeenCalledTimes(1);
+    expect(h.put).toHaveBeenCalledWith('/devices/0/mode', { Mode: { options: ['Comode_Off'] } });
+  });
+
+  it('does not cancel a different preset after a delayed off command', async () => {
+    const h = setup();
+    h.document.Mode!.options = ['Comode_Comfort', 'Sleep_0'];
+    await expect(h.adapter.setGoodSleep(null)).resolves.toMatchObject({ applied: true });
+    expect(h.put).not.toHaveBeenCalled();
+  });
+
+  it.each(['off', 'Heat', 'unknown model', 'no duration', 'invalid duration'])('refuses unsafe or unverified start: %s', async condition => {
+    const h = setup();
+    if (condition === 'off') { h.document.Operation!.power = 'Off'; }
+    if (condition === 'Heat') { h.document.Mode!.modes = ['Heat']; }
+    if (condition === 'unknown model') { h.document.description = 'TP6X_RAC_16K'; }
+    if (condition === 'no duration') { h.document.Mode!.options = ['Comode_Off']; }
+    await expect(h.adapter.setGoodSleep(condition === 'invalid duration' ? 30 : 60)).rejects.toThrow();
+    expect(h.put).not.toHaveBeenCalled();
+  });
+
+  it('requires a fresh preflight even when the last good status is cached', async () => {
+    const h = setup();
+    await h.adapter.getStatus();
+    h.get.mockRejectedValueOnce(Error('offline'));
+    await expect(h.adapter.setGoodSleep(60)).rejects.toThrow('offline');
+    expect(h.put).not.toHaveBeenCalled();
+  });
+
+  it('does not claim success after a discarded write or failed read-back', async () => {
+    const h = setup();
+    h.applyWrites(() => undefined);
+    await expect(h.adapter.setGoodSleep(60)).resolves.toMatchObject({ applied: false });
+    h.get.mockResolvedValueOnce({ Devices: [h.document] }).mockRejectedValueOnce(Error('offline'));
+    await expect(h.adapter.setGoodSleep(60)).rejects.toThrow('offline');
+  });
+
+  it('stops on a failed sequence write, does not retry it, and releases the queue', async () => {
+    const h = setup();
+    h.put.mockImplementationOnce(async () => '').mockRejectedValueOnce(Error('rejected'));
+    await expect(h.adapter.setGoodSleep(60)).rejects.toThrow('rejected');
+    expect(h.put).toHaveBeenCalledTimes(2);
+    await expect(h.adapter.setPower(false)).resolves.toMatchObject({ applied: true });
+  });
+});

@@ -66,7 +66,7 @@
       "convenienceModes": {
         "title": "Convenience mode switches",
         "type": "array",
-        "description": "Adds a switch to the Home app for each convenience mode you add \u2014 the family WindFree belongs to. None are added by default: the unit reports the mode it is in but never the ones it would accept, so there is nothing to detect from, and a switch for a name your model does not know would refuse to stay on. The six offered here are the ones a TP6X_RAC_16K applies, confirmed by read-back. Only one convenience mode runs at a time, so switching one on switches the others off. Which of them your unit calls WindFree is not something it says \u2014 try them, then give the one that is it a name.",
+        "description": "Adds switches for selected presets. Only one runs at a time. TP6X_RAC_17K units were verified with Nano (Wind free), 2Step, Speed (Fast Turbo), Comfort and Quiet. Other models may use different values. Use the separate Good Sleep duration setting for native timed sleep control.",
         "items": {
           "type": "object",
           "properties": {
@@ -76,19 +76,20 @@
               "required": true,
               "default": "Quiet",
               "oneOf": [
+                { "title": "Wind free (TP6X_RAC_17K)", "enum": ["Nano"] },
                 { "title": "Comfort", "enum": ["Comfort"] },
                 { "title": "Quiet", "enum": ["Quiet"] },
-                { "title": "Speed", "enum": ["Speed"] },
+                { "title": "Fast Turbo", "enum": ["Speed"] },
                 { "title": "Smart", "enum": ["Smart"] },
-                { "title": "2Step", "enum": ["2Step"] },
-                { "title": "Sleep", "enum": ["Sleep"] }
+                { "title": "2-Step", "enum": ["2Step"] },
+                { "title": "Sleep (legacy mode only)", "enum": ["Sleep"] }
               ],
               "description": "The unit's own word for it. This is what gets sent, and what the switch's HomeKit identity is built from \u2014 so a switch keeps its automations however it is named below."
             },
             "name": {
               "title": "Name in the Home app",
               "type": "string",
-              "description": "Optional. Used exactly as you write it, with no air conditioner name in front of it \u2014 call the one your unit uses for WindFree 'WindFree' and that is what the tile reads. Leave it empty for '<air conditioner> <mode>', which is what tells two units' Quiet switches apart."
+              "description": "Optional. Used exactly as written, without the AC name in front. Leave empty for the AC name followed by the Samsung preset name."
             }
           }
         }
@@ -159,6 +160,32 @@
         "default": 5,
         "minimum": 1
       },
+      "goodSleepMinutes": {
+        "title": "Good Sleep duration",
+        "type": "integer",
+        "default": 0,
+        "oneOf": [
+          {
+            "title": "Disabled",
+            "enum": [
+              0
+            ]
+          },
+          {
+            "title": "1 hour",
+            "enum": [
+              60
+            ]
+          },
+          {
+            "title": "2 hours",
+            "enum": [
+              120
+            ]
+          }
+        ],
+        "description": "Adds one native Good Sleep switch on verified TP6X_RAC_17K units. Start while running in Cool mode. Switching it off cancels Good Sleep and keeps the AC running. The duration is handled by the AC, independently of Homebridge."
+      },
       "certificateUrl": {
         "title": "Client certificate URL",
         "type": "string",
@@ -191,6 +218,7 @@
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
     "freezeIndoorTemperatureWhenOff",
+    "goodSleepMinutes",
     {
       "type": "fieldset",
       "title": "Advanced",
