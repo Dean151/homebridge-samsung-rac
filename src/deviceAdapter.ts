@@ -41,7 +41,11 @@ interface Change {
    * power write that queued synchronously — and this hardware discards every
    * write except power while the unit is off.
    */
-  resolve?: (status: RacStatus) => Pick<Change, 'body' | 'requested'>;
+  resolve?: (status: RacStatus) => Pick<Change, 'body' | 'requested'> | null;
+  /** Require a LAN observation before resolving dependent controls. */
+  freshRead?: boolean;
+  /** Avoid an unchanged dependent write, including overlapping scene commands. */
+  skipIfUnchanged?: boolean;
 }
 
 export interface DeviceAdapterOptions {
@@ -345,6 +349,31 @@ export class DeviceAdapter {
     return run;
   }
 
+  /** Resolve inside the queue so simultaneous axis changes preserve each other. */
+  setSwingAxis(axis: 'vertical' | 'horizontal', on: boolean): Promise<ApplyResult> {
+    const direction = (current: string | undefined) => {
+      if (!['Fix', 'Up_And_Low', 'Left_And_Right', 'All'].includes(current ?? '')) {
+        return undefined;
+      }
+      const vertical = axis === 'vertical' ? on : current === 'Up_And_Low' || current === 'All';
+      const horizontal = axis === 'horizontal' ? on : current === 'Left_And_Right' || current === 'All';
+      return vertical ? (horizontal ? 'All' : 'Up_And_Low') : (horizontal ? 'Left_And_Right' : 'Fix');
+    };
+    return this.applyChange({
+      field: 'Wind.direction',
+      resource: `/devices/${this.deviceId}/wind`,
+      body: {},
+      requested: undefined,
+      freshRead: true,
+      skipIfUnchanged: true,
+      read: status => status.windDirection,
+      resolve: status => {
+        const requested = direction(status.windDirection);
+        return requested === undefined ? null : { requested, body: { Wind: { direction: requested } } };
+      },
+    });
+  }
+
   // --- the write path ------------------------------------------------------
 
   private applyChange(change: Change): Promise<ApplyResult> {
@@ -361,9 +390,19 @@ export class DeviceAdapter {
   private async write(requested: Change): Promise<ApplyResult> {
     // Resolve before anything reads body or requested — including the dedup key,
     // which must key on the value that will actually go over the wire.
-    const change: Change = requested.resolve
-      ? { ...requested, ...requested.resolve(await this.getStatus()) }
-      : requested;
+    let change = requested;
+    if (requested.resolve) {
+      const status = await this.getStatus(requested.freshRead);
+      const resolved = requested.resolve(status);
+      if (resolved === null) {
+        this.log.debug(`Skipping unsupported dependent write to ${requested.field}.`);
+        return { applied: false, requested: requested.requested, actual: requested.read(status), status };
+      }
+      change = { ...requested, ...resolved };
+      if (requested.skipIfUnchanged && JSON.stringify(change.read(status)) === JSON.stringify(change.requested)) {
+        return { applied: true, requested: change.requested, actual: change.read(status), status };
+      }
+    }
 
     // The dedup key MUST include the value. Keying on the target alone makes
     // every slider drag send its first value and swallow the rest, which is
@@ -371,7 +410,7 @@ export class DeviceAdapter {
     const key = `${change.resource}|${change.field}|${JSON.stringify(change.requested)}`;
     const now = Date.now();
 
-    if (this.lastWrite && this.lastWrite.key === key && now - this.lastWrite.at < this.dedupMs) {
+    if (!change.skipIfUnchanged && this.lastWrite && this.lastWrite.key === key && now - this.lastWrite.at < this.dedupMs) {
       this.log.debug(`Skipping duplicate write ${key}`);
       return { applied: true, requested: change.requested, actual: change.requested, status: await this.getStatus() };
     }

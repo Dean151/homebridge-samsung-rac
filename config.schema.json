@@ -232,6 +232,12 @@
           }
         }
       },
+      "detailedSwing": {
+        "title": "Independent swing axes",
+        "type": "boolean",
+        "default": false,
+        "description": "Opt-in vertical/horizontal switches for verified firmware using Fix, Up_And_Low, Left_And_Right and All. Unsupported values are ignored."
+      },
       "certificateUrl": {
         "title": "Client certificate URL",
         "type": "string",
@@ -267,6 +273,7 @@
     "autoClean",
     "purify",
     "goodSleep",
+    "detailedSwing",
     {
       "type": "fieldset",
       "title": "Advanced",

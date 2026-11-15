@@ -32,7 +32,7 @@ const switchLabels: Record<string, string> = {
 };
 
 /** Subtype prefixes for the switches this plugin owns, so it only removes its own. */
-const switchSubtypes = { comode: 'comode-', mode: 'mode-', autoClean: 'setting-autoclean', purify: 'setting-spi', goodSleep: 'good-sleep' } as const;
+const switchSubtypes = { comode: 'comode-', mode: 'mode-', autoClean: 'setting-autoclean', purify: 'setting-spi', goodSleep: 'good-sleep', swing: 'swing-' } as const;
 
 /**
  * What to call a switch in the log, and the tail of its HomeKit name when the
@@ -55,7 +55,7 @@ interface ModeSwitch {
   /** Stable, and the HomeKit subtype: it is what carries the user's automations. */
   subtype: string;
   /** Which field this switch is backed by, and so which switches it excludes. */
-  group: 'comode' | 'mode' | 'autoclean' | 'spi';
+  group: 'comode' | 'mode' | 'autoclean' | 'spi' | 'swing-vertical' | 'swing-horizontal';
   /** Short, for the log. */
   label: string;
   /** What the Home app shows, unless the user has since renamed it there. */
@@ -108,6 +108,7 @@ export class SamsungRacAccessory {
 
   /** The switches currently published for modes HeaterCooler cannot express. */
   private modeSwitches: ModeSwitch[] = [];
+  private pendingSwingWrites = 0;
 
   /**
    * The last mode seen that a switch does not stand for, so switching Dry off
@@ -575,6 +576,22 @@ export class SamsungRacAccessory {
       });
     }
 
+    if (this.platform.settings.detailedSwing) {
+      for (const axis of ['vertical', 'horizontal'] as const) {
+        const label = axis === 'vertical' ? 'Vertical swing' : 'Horizontal swing';
+        specs.push({
+          subtype: `${switchSubtypes.swing}${axis}`,
+          group: `swing-${axis}`,
+          label,
+          displayName: `${this.accessory.displayName} ${label}`,
+          available: status => ['Fix', 'Up_And_Low', 'Left_And_Right', 'All'].includes(status.windDirection ?? ''),
+          isOn: status => status.windDirection === 'All'
+            || status.windDirection === (axis === 'vertical' ? 'Up_And_Low' : 'Left_And_Right'),
+          write: on => () => this.adapter.setSwingAxis(axis, on),
+        });
+      }
+    }
+
     for (const entry of this.platform.settings.convenienceModes) {
       const name = entry.value;
       if (goodSleep && name.toLowerCase() === 'sleep') {
@@ -655,7 +672,8 @@ export class SamsungRacAccessory {
     for (const service of [...this.accessory.services]) {
       const subtype = service.subtype ?? '';
       const ours = subtype.startsWith(switchSubtypes.comode) || subtype.startsWith(switchSubtypes.mode)
-        || subtype === switchSubtypes.autoClean || subtype === switchSubtypes.purify || subtype === switchSubtypes.goodSleep;
+        || subtype === switchSubtypes.autoClean || subtype === switchSubtypes.purify
+        || subtype === switchSubtypes.goodSleep || subtype.startsWith(switchSubtypes.swing);
       if (service.UUID === this.platform.Service.Switch.UUID && ours && !wanted.has(subtype)) {
         this.platform.log.info(`${this.accessory.displayName}: removing the switch for '${subtype}'.`);
         this.accessory.removeService(service);
@@ -1075,7 +1093,7 @@ export class SamsungRacAccessory {
       // the second and a half it takes to write and read back. If the unit then
       // refuses the change, the read-back puts them back where they were.
       this.excludeSiblings(spec);
-    } else if (!spec.isOn(this.status)) {
+    } else if (!spec.isOn(this.status) && (!spec.group.startsWith('swing-') || this.pendingSwingWrites === 0)) {
       // Switching off something that is not on must not touch the unit. A
       // scene that turns every switch in the group off would otherwise send one
       // write per switch, and each of them would cancel the mode a later switch
@@ -1100,7 +1118,13 @@ export class SamsungRacAccessory {
       return;
     }
 
-    await this.apply(write);
+    const swing = spec.group.startsWith('swing-');
+    if (swing) { this.pendingSwingWrites++; }
+    try {
+      await this.apply(write);
+    } finally {
+      if (swing) { this.pendingSwingWrites--; }
+    }
   }
 
   /** Every other switch backed by the same field reads off, immediately. */
