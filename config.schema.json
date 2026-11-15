@@ -25,6 +25,11 @@
               "format": "ipv4",
               "description": "The unit's address on your network. Give it a fixed DHCP lease on your router — the plugin cannot follow it if it moves."
             },
+            "hideOutdoorTemperature": {
+              "title": "Hide this unit’s outdoor sensor",
+              "type": "boolean",
+              "default": false
+            },
             "token": {
               "title": "Device token (optional)",
               "type": "string",
@@ -171,7 +176,7 @@
       "key": "devices",
       "type": "array",
       "buttonText": "Add an air conditioner",
-      "items": ["devices[].name", "devices[].host", "devices[].token", "devices[].heating"]
+      "items": ["devices[].name", "devices[].host", "devices[].token", "devices[].heating", "devices[].hideOutdoorTemperature"]
     },
     "updateInterval",
     "swingDirection",

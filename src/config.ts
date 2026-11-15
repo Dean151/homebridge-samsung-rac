@@ -17,6 +17,8 @@ export interface DeviceConfig {
    * RacStatus.heatCapable.
    */
   heating?: boolean;
+  /** Hide only this AC's outdoor sensor; all other temperature settings remain platform-wide. */
+  hideOutdoorTemperature?: boolean;
 }
 
 /**
@@ -213,6 +215,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       host,
       name: typeof candidate?.name === 'string' && candidate.name.trim() ? candidate.name.trim() : undefined,
       token: typeof candidate?.token === 'string' && candidate.token.trim() ? candidate.token.trim() : undefined,
+      ...(toBoolean(candidate?.hideOutdoorTemperature, 'devices[].hideOutdoorTemperature', log) ? { hideOutdoorTemperature: true } : {}),
       heating: toHeating((candidate as { heating?: unknown } | null)?.heating, host, log),
     });
   }

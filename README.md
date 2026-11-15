@@ -69,6 +69,15 @@ confirmed by read-back; `WindFree` and `SoftCool` are not names it knows, so one
 of those six is what it calls WindFree. Which one is stated nowhere — try them,
 and name the one that turns out to be it.
 
+### Hide duplicate outdoor sensors
+
+Set `"hideOutdoorTemperature": true` on individual entries in `devices` to hide
+those ACs' outdoor sensors. Other units retain the platform's linked/separate
+placement and temperature scale. For a multisplit, keep one unit's sensor visible
+and hide the duplicates. This does not combine readings across ACs or create a
+new accessory. Cached hidden sensors are removed once all units are reachable;
+the AC tiles and their identities remain unchanged.
+
 ### Naming the switches
 
 An entry in either list can be a bare mode name or an object carrying the name
