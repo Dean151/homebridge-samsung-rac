@@ -108,8 +108,10 @@ remote/app are included in the debug status log.
 
 ### Native Good Sleep
 
-Set `"goodSleepMinutes": 60` or `120` to add one Good Sleep switch; `0` or omission
-disables it. It is available on any model reporting a numeric `Sleep` option, but
+Set `"goodSleepMinutes": 60` or `120` to add one Good Sleep switch with a native
+off delay of one or two hours; `0` or omission disables it. Turning the switch on
+programs the AC's Good Sleep mode and duration. It is available on any model
+reporting a numeric `Sleep` option, but
 only TP6X_RAC_17K has been verified. Start with the unit running in Cool mode.
 The switch also reflects sleep started from the Samsung app and suppresses a
 configured legacy `Sleep` preset while this duration-aware control is enabled.

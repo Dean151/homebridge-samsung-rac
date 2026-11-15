@@ -197,7 +197,7 @@
         }
       },
       "goodSleepMinutes": {
-        "title": "Good Sleep duration",
+        "title": "Good Sleep off delay",
         "type": "integer",
         "default": 0,
         "oneOf": [
@@ -220,7 +220,7 @@
             ]
           }
         ],
-        "description": "Opt-in native sleep control for units reporting Sleep. Verified on TP6X_RAC_17K in Cool mode; other models may reject it. Device read-back determines success."
+        "description": "Programs the AC's native Good Sleep mode and off delay. Start/cancel and duration read-back verified on TP6X_RAC_17K in Cool mode; full-cycle expiry remains unverified. Other models may reject it."
       },
       "certificateUrl": {
         "title": "Client certificate URL",
