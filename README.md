@@ -78,6 +78,18 @@ and hide the duplicates. This does not combine readings across ACs or create a
 new accessory. Cached hidden sensors are removed once all units are reachable;
 the AC tiles and their identities remain unchanged.
 
+### Auto Clean
+
+Set `"autoClean": {"enabled": true, "name": "Auto Clean"}` to expose the switch
+when the unit reports its setting. Omit `name` to use the AC name followed by
+Auto Clean; names chosen later in Apple Home are preserved. Omit `autoClean` or set
+`enabled` to false to disable it. A hand-written `{"name": "..."}` also enables it.
+
+The switch reports the enabled self-drying setting, including while the AC is off; it does not mean cleaning is in progress.
+Changes are confirmed by read-back. If firmware ignores a change while the unit
+is off, a warning asks you to turn it on first. Changes from the remote/app are
+included in the debug status log.
+
 ### Naming the switches
 
 An entry in either list can be a bare mode name or an object carrying the name

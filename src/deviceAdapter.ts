@@ -253,6 +253,18 @@ export class DeviceAdapter {
     });
   }
 
+  /** A persistent setting, independent of the selected operating mode. */
+  setAutoClean(on: boolean): Promise<ApplyResult> {
+    const value = on ? 'On' : 'Off';
+    return this.applyChange({
+      field: 'Mode.options.Autoclean',
+      resource: `/devices/${this.deviceId}/mode`,
+      body: { Mode: { options: [`Autoclean_${value}`] } },
+      requested: value,
+      read: (status) => status.options.Autoclean,
+    });
+  }
+
   // --- the write path ------------------------------------------------------
 
   private applyChange(change: Change): Promise<ApplyResult> {
@@ -337,6 +349,11 @@ export class DeviceAdapter {
       }
     }
 
+    for (const field of trackedOptions) {
+      if (previous.options[field] !== next.options[field]) {
+        changes.push(`${field} ${format(previous.options[field])} -> ${format(next.options[field])}`);
+      }
+    }
     if (changes.length) {
       this.log.debug(`${this.label} changed: ${changes.join(', ')}`);
     }
@@ -345,6 +362,10 @@ export class DeviceAdapter {
   private reportRejected(change: Change, actual: unknown, status: RacStatus): void {
     // A powered-off unit buffers some changes and applies them at power-on, so
     // a mismatch there is expected rather than a failure.
+    if (!status.active && change.field === 'Mode.options.Autoclean') {
+      this.log.warn(`${this.label}: Auto Clean was not applied while the unit is off; turn the unit on first.`);
+      return;
+    }
     if (!status.active) {
       this.log.debug(
         `${change.field} still reads ${JSON.stringify(actual)} while the unit is off; `
@@ -375,12 +396,15 @@ const trackedFields = [
   'outdoorTemperature', 'comode', 'filterLife',
 ] as const satisfies readonly (keyof RacStatus)[];
 
+const trackedOptions = ['Autoclean'] as const;
+
 function format(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value) ?? String(value);
 }
 
 function describe(status: RacStatus): string {
-  return trackedFields.map((field) => `${field}=${format(status[field])}`).join(' ');
+  return [...trackedFields.map(field => `${field}=${format(status[field])}`),
+    ...trackedOptions.map(field => `${field}=${format(status.options[field])}`)].join(' ');
 }
 
 function delay(ms: number): Promise<void> {
