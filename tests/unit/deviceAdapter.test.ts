@@ -55,6 +55,101 @@ function build(options: DeviceAdapterOptions = {}): Harness {
   };
 }
 
+describe('conditional timed shutoff', () => {
+  it('discards a cancelled expiry waiting behind another queued write', async () => {
+    const h = build();
+    let release!: (value: string) => void;
+    h.put.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const earlier = h.adapter.setMode('Dry');
+    let current = true;
+    const expired = h.adapter.turnOffIf(() => current);
+    await Promise.resolve();
+    current = false;
+    release('');
+    await earlier;
+    await expect(expired).resolves.toBeNull();
+    expect(h.put).toHaveBeenCalledTimes(1);
+    expect(h.put.mock.calls[0][0]).toBe('/devices/0/mode');
+  });
+
+  it('checks cancellation again after a fresh read finishes', async () => {
+    const h = build();
+    let release!: (value: { Devices: RacDeviceDocument[] }) => void;
+    h.get.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    let current = true;
+    const expired = h.adapter.turnOffIf(() => current);
+    await Promise.resolve();
+    current = false;
+    release({ Devices: [h.document] });
+    await expect(expired).resolves.toBeNull();
+    expect(h.put).not.toHaveBeenCalled();
+  });
+
+  it('rejects a failed fresh read despite a warm cache', async () => {
+    const h = build({ cacheMs: 60000, maxStaleMs: 60000 });
+    await h.adapter.getStatus();
+    h.get.mockRejectedValueOnce(new Error('offline'));
+    await expect(h.adapter.turnOffIf(() => true)).rejects.toThrow('offline');
+    expect(h.put).not.toHaveBeenCalled();
+  });
+
+  it('does not write when a fresh read already reports Off', async () => {
+    const h = build();
+    h.document.Operation = { power: 'Off' };
+    await expect(h.adapter.turnOffIf(() => true)).resolves.toMatchObject({ active: false });
+    expect(h.put).not.toHaveBeenCalled();
+  });
+
+  it('requires a fresh confirmation and observes an applied Off before retrying', async () => {
+    const h = build({ cacheMs: 60000 });
+    h.applyWrites((_body, document) => { document.Operation = { power: 'Off' }; });
+    h.get.mockResolvedValueOnce({ Devices: [h.document] }).mockRejectedValueOnce(new Error('lost confirmation'));
+    await expect(h.adapter.turnOffIf(() => true)).rejects.toThrow('lost confirmation');
+    await expect(h.adapter.turnOffIf(() => true)).resolves.toMatchObject({ active: false });
+    expect(h.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replay an applied Off whose HTTP response was lost', async () => {
+    const h = build();
+    h.put.mockImplementationOnce(async () => {
+      h.document.Operation = { power: 'Off' };
+      throw new Error('lost response');
+    });
+    await expect(h.adapter.turnOffIf(() => true)).rejects.toThrow('lost response');
+    await expect(h.adapter.turnOffIf(() => true)).resolves.toMatchObject({ active: false });
+    expect(h.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses observed power rather than an earlier duplicate-write record', async () => {
+    const h = build({ dedupMs: 60000 });
+    await h.adapter.setPower(false); // Firmware ignores this first write.
+    h.applyWrites((_body, document) => { document.Operation = { power: 'Off' }; });
+    await expect(h.adapter.turnOffIf(() => true)).resolves.toMatchObject({ active: false });
+    expect(h.put).toHaveBeenCalledTimes(2);
+  });
+
+  it('checks cancellation after the minimum write spacing', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-11-15T10:00:00Z'));
+    try {
+      const h = build({ minWriteIntervalMs: 1000 });
+      const earlier = h.adapter.setMode('Dry');
+      await jest.advanceTimersByTimeAsync(1);
+      await earlier;
+      let current = true;
+      const expired = h.adapter.turnOffIf(() => current);
+      await jest.advanceTimersByTimeAsync(1);
+      current = false;
+      await jest.advanceTimersByTimeAsync(1000);
+      await expect(expired).resolves.toBeNull();
+      expect(h.put).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+});
+
 describe('debug logging', () => {
   const lines = (log: { debug: jest.Mock }) => log.debug.mock.calls.map((call) => call.join(' '));
 

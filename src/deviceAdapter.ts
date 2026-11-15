@@ -161,6 +161,48 @@ export class DeviceAdapter {
     });
   }
 
+  /**
+   * A countdown may be cancelled while waiting behind another write. Check its
+   * deadline inside the existing write queue, after spacing and a strict read,
+   * immediately before sending Off. Once sent, a command cannot be recalled.
+   */
+  turnOffIf(stillCurrent: () => boolean): Promise<RacStatus | null> {
+    const turnOff = async (): Promise<RacStatus | null> => {
+      if (!stillCurrent()) {
+        return null;
+      }
+      const wait = this.minWriteIntervalMs - (Date.now() - this.lastWriteAt);
+      if (wait > 0) {
+        await delay(wait);
+      }
+      if (!stillCurrent()) {
+        return null;
+      }
+      const before = await this.getStatus(true);
+      if (!stillCurrent()) {
+        return null;
+      }
+      if (!before.active) {
+        return before;
+      }
+
+      this.log.debug(`${this.label} writing timed Operation.power = Off.`);
+      // Fresh status, rather than the ordinary write dedup cache, decides here.
+      this.lastWrite = null;
+      try {
+        await this.api.put(`/devices/${this.deviceId}/operation`, { Operation: { power: 'Off' } });
+      } finally {
+        this.lastWriteAt = Date.now();
+        this.invalidate();
+      }
+      await delay(this.settleMs);
+      return this.getStatus(true);
+    };
+    const run = this.queue.then(turnOff, turnOff);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
   setMode(mode: string): Promise<ApplyResult> {
     return this.applyChange({
       field: 'Mode.modes',

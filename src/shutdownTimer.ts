@@ -7,7 +7,7 @@ export interface ShutdownDeadline {
 interface ShutdownTimerOptions {
   durations: readonly number[];
   changed: (state: ShutdownDeadline | null) => void;
-  /** Check stillCurrent after asynchronous reads, before issuing a power write. */
+  /** Check eligibility inside the write queue, immediately before sending Off. */
   turnOff: (stillCurrent: () => boolean) => Promise<boolean>;
   warn: (message: string) => void;
 }
@@ -99,11 +99,16 @@ export class ShutdownTimer {
     }
     let succeeded = false;
     try {
-      succeeded = await this.options.turnOff(stillCurrent);
+      succeeded = await this.options.turnOff(() => stillCurrent()
+        && Date.now() >= state.deadline && Date.now() < state.deadline + shutdownGraceMs);
     } catch {
       // The next attempt reads the AC before deciding whether another off is needed.
     }
     if (!stillCurrent()) {
+      return;
+    }
+    if (!succeeded && Date.now() < state.deadline) {
+      this.schedule(); // The clock moved backwards during the read or queue wait.
       return;
     }
     if (succeeded) {

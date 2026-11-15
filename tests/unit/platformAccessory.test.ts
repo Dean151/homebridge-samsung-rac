@@ -73,6 +73,7 @@ async function build(options: {
   const adapter = {
     getStatus,
     setPower: jest.fn(applied(true)),
+    turnOffIf: jest.fn(async () => ({ ...status, active: false })),
     setMode: jest.fn(applied('Auto')),
     setTargetTemperature: jest.fn(applied(22)),
     setSpeedLevel: jest.fn(applied(2)),
@@ -162,7 +163,7 @@ describe('SamsungRacAccessory', () => {
       await setting(h.accessory)?.setHandler?.(false);
       expect(h.accessory.context.shutdownTimer).toBeUndefined();
       await jest.advanceTimersByTimeAsync(3600000);
-      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(h.adapter.turnOffIf).not.toHaveBeenCalled();
     });
 
     it('keeps the same switch identity after a configured duration change', async () => {
@@ -172,11 +173,10 @@ describe('SamsungRacAccessory', () => {
       expect(h.accessory.getServiceById(Service.Switch, 'shutdown-timer')).toBe(service);
     });
 
-    it('does not accept a cached write result as confirmation after a failed fresh read', async () => {
+    it('keeps the deadline when the conditional command cannot confirm power-off', async () => {
       const h = await build({ settings: { shutdownTimer: { minutes: 1 } } });
       await setting(h.accessory)?.setHandler?.(true);
-      h.adapter.getStatus.mockResolvedValueOnce(baseStatus).mockRejectedValueOnce(new Error('offline'));
-      h.adapter.setPower.mockResolvedValue({ applied: true, status: { ...baseStatus, active: false } });
+      h.adapter.turnOffIf.mockRejectedValueOnce(new Error('lost confirmation'));
       await jest.advanceTimersByTimeAsync(60000);
       expect(h.accessory.context.shutdownTimer).toBeDefined();
       h.setStatus({ active: false });
@@ -185,45 +185,31 @@ describe('SamsungRacAccessory', () => {
     });
 
     it('never starts an idle AC, and cancels when a poll observes manual power-off', async () => {
-      const h = await build({ status: { active: false }, settings: { shutdownTimer: { minutes: 30 } } });
+      const h = await build({ status: { active: false }, settings: { shutdownTimer: { minutes: 30 }, updateInterval: 10 } });
       await setting(h.accessory)?.setHandler?.(true);
       expect(h.accessory.context.shutdownTimer).toBeUndefined();
-      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(h.adapter.turnOffIf).not.toHaveBeenCalled();
       h.setStatus({ active: true });
       await setting(h.accessory)?.setHandler?.(true);
       h.setStatus({ active: false });
-      // Trigger the normal getter refresh via the existing polling interval.
-      await pollOnce(h.adapter.getStatus);
+      // Observe manual Off before the countdown reaches its deadline.
+      await jest.advanceTimersByTimeAsync(10000);
       expect(h.accessory.context.shutdownTimer).toBeUndefined();
-      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(h.adapter.turnOffIf).not.toHaveBeenCalled();
     });
 
     it('uses a fresh read and a verified power-off at the deadline', async () => {
       const h = await build({ settings: { shutdownTimer: { minutes: 1 } } });
-      h.adapter.setPower.mockImplementation(async () => {
+      h.adapter.turnOffIf.mockImplementation(async () => {
         h.setStatus({ active: false });
-        return { applied: true, status: { ...baseStatus, active: false } };
+        return { ...baseStatus, active: false };
       });
       await setting(h.accessory)?.setHandler?.(true);
       h.adapter.getStatus.mockClear();
       await jest.advanceTimersByTimeAsync(60000);
-      expect(h.adapter.getStatus).toHaveBeenCalledWith(true);
-      expect(h.adapter.setPower).toHaveBeenCalledWith(false);
+      expect(h.adapter.turnOffIf).toHaveBeenCalledWith(expect.any(Function));
       expect(h.accessory.context.shutdownTimer).toBeUndefined();
       expect(setting(h.accessory)?.value).toBe(false);
-    });
-
-    it('does not issue a blind off when the fresh read fails', async () => {
-      const h = await build({ settings: { shutdownTimer: { minutes: 1 } } });
-      await setting(h.accessory)?.setHandler?.(true);
-      h.adapter.getStatus.mockRejectedValueOnce(new Error('offline'));
-      await jest.advanceTimersByTimeAsync(60000);
-      expect(h.adapter.setPower).not.toHaveBeenCalled();
-      expect(setting(h.accessory)?.getHandler?.()).toBe(true);
-      h.setStatus({ active: false });
-      await jest.advanceTimersByTimeAsync(30000);
-      expect(h.adapter.setPower).not.toHaveBeenCalled();
-      expect(h.accessory.context.shutdownTimer).toBeUndefined();
     });
 
     it('does not arm from cached status after a failed LAN read', async () => {
@@ -231,19 +217,19 @@ describe('SamsungRacAccessory', () => {
       h.adapter.getStatus.mockRejectedValueOnce(new Error('offline'));
       await expect(setting(h.accessory)?.setHandler?.(true)).rejects.toBeInstanceOf(FakeHapStatusError);
       expect(h.accessory.context.shutdownTimer).toBeUndefined();
-      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(h.adapter.turnOffIf).not.toHaveBeenCalled();
     });
 
     it('retries a deadline when a strict read fails', async () => {
       const h = await build({ settings: { shutdownTimer: { minutes: 1 } } });
       await setting(h.accessory)?.setHandler?.(true);
-      h.adapter.getStatus.mockRejectedValueOnce(new Error('offline'));
+      h.adapter.turnOffIf.mockRejectedValueOnce(new Error('offline'));
       await jest.advanceTimersByTimeAsync(60000);
-      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(h.adapter.turnOffIf).toHaveBeenCalledTimes(1);
       expect(setting(h.accessory)?.getHandler?.()).toBe(true);
-      h.adapter.setPower.mockImplementation(async () => { h.setStatus({ active: false }); return { applied: true, status: { ...baseStatus, active: false } }; });
+      h.adapter.turnOffIf.mockImplementation(async () => { h.setStatus({ active: false }); return { ...baseStatus, active: false }; });
       await jest.advanceTimersByTimeAsync(30000);
-      expect(h.adapter.setPower).toHaveBeenCalledWith(false);
+      expect(h.adapter.turnOffIf).toHaveBeenCalledWith(expect.any(Function));
       expect(h.accessory.context.shutdownTimer).toBeUndefined();
     });
 
@@ -258,6 +244,24 @@ describe('SamsungRacAccessory', () => {
       expect(h.accessory.context.shutdownTimer).toBeUndefined();
     });
 
+    it('withdraws a queued expiry when Home cancels the timer', async () => {
+      const h = await build({ settings: { shutdownTimer: { minutes: 1 } } });
+      let allowed!: () => boolean;
+      let finish!: (value: null) => void;
+      h.adapter.turnOffIf.mockImplementationOnce(guard => {
+        allowed = guard;
+        return new Promise(resolve => { finish = resolve; });
+      });
+      await setting(h.accessory)?.setHandler?.(true);
+      await jest.advanceTimersByTimeAsync(60000);
+      expect(allowed()).toBe(true);
+      await setting(h.accessory)?.setHandler?.(false);
+      expect(allowed()).toBe(false);
+      finish(null);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(h.accessory.context.shutdownTimer).toBeUndefined();
+    });
+
     it('resumes the saved deadline without changing unrelated services', async () => {
       const cached = new FakeAccessory();
       cached.context.shutdownTimer = { minutes: 30, deadline: Date.now() + 1000 };
@@ -268,7 +272,7 @@ describe('SamsungRacAccessory', () => {
       expect(h.accessory.getServiceById(Service.Switch, 'shutdown-timer')).toBeDefined();
       expect(h.accessory.getServiceById(Service.Switch, 'not-ours')).toBeDefined();
       await jest.advanceTimersByTimeAsync(1000);
-      expect(h.adapter.setPower).toHaveBeenCalledWith(false);
+      expect(h.adapter.turnOffIf).toHaveBeenCalledWith(expect.any(Function));
     });
   });
 

@@ -120,4 +120,26 @@ describe('persisted shutoff countdown', () => {
     await jest.advanceTimersByTimeAsync(shutdownGraceMs);
     expect(h.turnOff).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['past grace', 'before deadline'])(
+    'withdraws permission if the clock moves %s while expiry waits', async direction => {
+      const h = build();
+      let finish!: (value: boolean) => void;
+      h.turnOff.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+      h.timer.arm(1);
+      await jest.advanceTimersByTimeAsync(60000);
+      const allowed = h.turnOff.mock.calls[0][0];
+      expect(allowed()).toBe(true);
+      jest.setSystemTime(Date.now() + (direction === 'past grace' ? shutdownGraceMs : -60000));
+      expect(allowed()).toBe(false);
+      finish(false);
+      await jest.advanceTimersByTimeAsync(1);
+      if (direction === 'past grace') {
+        expect(h.timer.state).toBeNull();
+      } else {
+        expect(h.timer.state).not.toBeNull();
+        expect(h.warn).not.toHaveBeenCalled();
+      }
+    });
+
 });

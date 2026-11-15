@@ -80,6 +80,8 @@ Start the AC first, then turn the timer on. Another On starts a new countdown;
 Off cancels without turning the AC off. Observed manual power-off also cancels it.
 The deadline survives a Homebridge restart. Arming and expiry require fresh LAN
 reads; cached fallback cannot authorize an action or confirm power-off.
+Cancellation and the deadline are checked again inside the command queue, just
+before sending Off. A command already sent to the AC cannot be recalled.
 
 Homebridge must be running. Failed expiry retries are bounded to five minutes
 with warnings; after that the timer is cleared and the AC is left unchanged.
@@ -91,6 +93,8 @@ that is native Good Sleep, not evidence of a general off timer. No independent
 local off-timer command has been verified. This proposed host countdown remains
 separate from that protocol investigation and is not claimed to replace a native
 timer. HomeKit automations may already cover simpler shutoff needs.
+See [native-timer investigation](docs/native-timer-investigation.md) for the
+read-only observations and the remaining remote/app comparison.
 
 ### Naming the switches
 

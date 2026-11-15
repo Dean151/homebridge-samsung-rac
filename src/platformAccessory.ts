@@ -254,19 +254,11 @@ export class SamsungRacAccessory {
         this.pushShutdownTimers();
       },
       turnOff: async stillCurrent => {
-        // No stale/cache fallback when deciding whether a countdown should act.
-        const status = await this.adapter.getStatus(true);
-        if (!stillCurrent()) {
+        const status = await this.adapter.turnOffIf(stillCurrent);
+        if (!status) {
           return false;
         }
         this.status = status;
-        this.markResponsive();
-        if (!this.status.active) {
-          this.push();
-          return true;
-        }
-        await this.adapter.setPower(false);
-        this.status = await this.adapter.getStatus(true);
         this.markResponsive();
         this.push();
         if (!this.status.active) {
