@@ -159,6 +159,23 @@
         "default": 5,
         "minimum": 1
       },
+      "shutdownTimer": {
+        "title": "Local shutoff timer",
+        "type": "object",
+        "properties": {
+          "minutes": {
+            "title": "Duration in minutes (0 disables)",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440,
+            "default": 0
+          },
+          "name": {
+            "title": "Name in the Home app",
+            "type": "string"
+          }
+        }
+      },
       "certificateUrl": {
         "title": "Client certificate URL",
         "type": "string",
@@ -191,6 +208,7 @@
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
     "freezeIndoorTemperatureWhenOff",
+    "shutdownTimer",
     {
       "type": "fieldset",
       "title": "Advanced",

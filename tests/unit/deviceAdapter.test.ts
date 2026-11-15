@@ -339,3 +339,12 @@ describe('a unit configured in Fahrenheit', () => {
     expect(result).toMatchObject({ applied: true, actual: 22 });
   });
 });
+
+describe('explicit fresh status', () => {
+  it('bypasses both cache reuse and stale fallback without changing ordinary reads', async () => {
+    const h = build({ cacheMs: 60000 });
+    await h.adapter.getStatus(); h.get.mockRejectedValue(new Error('offline'));
+    await expect(h.adapter.getStatus()).resolves.toBeDefined();
+    await expect(h.adapter.getStatus(true)).rejects.toThrow('offline');
+  });
+});

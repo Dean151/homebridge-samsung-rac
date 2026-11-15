@@ -8,6 +8,13 @@ function logger() {
 }
 
 describe('normaliseConfig', () => {
+  it('accepts one named bounded duration, and keeps the countdown opt-in', () => {
+    const parse = (shutdownTimer: unknown) => normaliseConfig({ platform: 'x', shutdownTimer } as never, logger() as never).shutdownTimer;
+    for (const value of [undefined, false, [], { minutes: 0 }, { minutes: -1 }, { minutes: 1.5 }, { minutes: 1441 }]) {
+      expect(parse(value)).toBeNull();
+    }
+    expect(parse({ minutes: 60, name: ' Later ' })).toEqual({ minutes: 60, name: 'Later' });
+  });
   it('fills in the defaults', () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

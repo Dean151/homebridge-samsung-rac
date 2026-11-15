@@ -89,6 +89,8 @@ export interface NormalisedConfig {
    * the Samsung app; the plugin reports them as Auto and leaves them alone.
    */
   modeSwitches: ModeSwitchConfig[];
+  /** Optional local countdown switches; minutes, one countdown per AC. */
+  shutdownTimer: { minutes: number; name?: string } | null;
   certificateUrl?: string;
 }
 
@@ -239,10 +241,24 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       config.freezeIndoorTemperatureWhenOff, 'freezeIndoorTemperatureWhenOff', log),
     convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
+    shutdownTimer: toShutdownTimer(config.shutdownTimer, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
   };
+}
+
+function toShutdownTimer(value: unknown, log: Logging): { minutes: number; name?: string } | null {
+  if (value === undefined || value === null || value === false) { return null; }
+  const option = value as { minutes?: unknown; name?: unknown };
+  if (option?.minutes === 0) { return null; }
+  if (typeof value !== 'object' || Array.isArray(value) || !Number.isInteger(option?.minutes)
+    || (option.minutes as number) < 1 || (option.minutes as number) > 1440) {
+    log.warn('Ignoring shutdownTimer: use one whole-minute duration from 1 to 1440.');
+    return null;
+  }
+  return { minutes: option.minutes as number,
+    name: typeof option.name === 'string' && option.name.trim() ? option.name.trim() : undefined };
 }
 
 /**

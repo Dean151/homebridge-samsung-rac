@@ -99,9 +99,9 @@ export class DeviceAdapter {
 
   // --- reads ---------------------------------------------------------------
 
-  async getStatus(): Promise<RacStatus> {
+  async getStatus(fresh = false): Promise<RacStatus> {
     const now = Date.now();
-    if (this.cached && now - this.cachedAt < this.cacheMs) {
+    if (!fresh && this.cached && now - this.cachedAt < this.cacheMs) {
       return this.cached;
     }
 
@@ -131,7 +131,7 @@ export class DeviceAdapter {
       // dropped packet — but only briefly. Past maxStaleMs the caller must see
       // the failure, or a unit that has been unplugged for an hour still shows
       // yesterday's temperature instead of "No Response".
-      if (this.cached && Date.now() - this.cachedAt < this.maxStaleMs) {
+      if (!fresh && this.cached && Date.now() - this.cachedAt < this.maxStaleMs) {
         this.log.debug('Serving cached status after a failed read:', (error as Error).message);
         return this.cached;
       }
