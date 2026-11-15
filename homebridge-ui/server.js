@@ -97,7 +97,12 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
 
     const pem = await this.loadCertificate(certificateUrl);
     const record = await this.tokens().get(host);
-    const api = new LocalApi({ host, pem, token: record ? record.token : undefined, timeoutMs: 8000 });
+    const options = { host, pem, token: record ? record.token : undefined, timeoutMs: 8000 };
+    const { SsdpDiscovery, normaliseDeviceUuid } = plugin('discovery/ssdp');
+    const { DiscoveredApi } = plugin('transport/discoveredApi');
+    const uuid = normaliseDeviceUuid(record?.deviceUuid);
+    const discovery = uuid ? new SsdpDiscovery([{ uuid, host }]) : null;
+    const api = discovery ? new DiscoveredApi(options, uuid, discovery) : new LocalApi(options);
 
     try {
       const device = devicesFrom(await api.get('/devices'))[0];
@@ -117,6 +122,7 @@ class SamsungRacUiServer extends HomebridgePluginUiServer {
       throw new RequestError(error.message, { status: 502 });
     } finally {
       api.close();
+      discovery?.close();
     }
   }
 

@@ -1,6 +1,7 @@
 import { SamsungRacPlatform } from '../../src/platform';
 import { CertificateStore } from '../../src/transport/certificate';
 import { LocalApi } from '../../src/transport/localApi';
+import { TokenStore } from '../../src/transport/tokenStore';
 import fixture from '../fixtures/devices.json';
 import { Characteristic, FakeAccessory, FakeHapStatusError, HAPStatus, Service } from '../mocks/hap.mock';
 
@@ -9,6 +10,7 @@ describe('per-device outdoor suppression', () => {
   afterEach(() => { jest.restoreAllMocks(); jest.clearAllTimers(); jest.useRealTimers(); });
   it.each(['linked', 'separate'])('hides one %s sensor while retaining its AC and sibling sensor', async placement => {
     jest.spyOn(CertificateStore.prototype, 'load').mockResolvedValue(Buffer.from('test'));
+    jest.spyOn(TokenStore.prototype, 'all').mockResolvedValue({});
     jest.spyOn(LocalApi.prototype, 'get').mockImplementation(async function (this: LocalApi) {
       const document = structuredClone(fixture.Devices[0]);
       document.uuid = this.description.split(':')[0];

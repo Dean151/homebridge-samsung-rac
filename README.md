@@ -197,9 +197,9 @@ is never withdrawn afterwards — some units publish nothing until they are runn
 2. **Fetch the certificate.** The local API requires a client certificate that
    bundles a private key. It is not shipped with this plugin: it is downloaded
    once and stored next to your Homebridge config, on your machine only.
-3. **Add your air conditioner's IP address** and save. Give it a fixed DHCP lease
-   on your router — the plugin cannot follow a unit that moves. You can add
-   several units.
+3. **Add your air conditioner's IP address** and save. Reserve that address with
+   a DHCP reservation in your router. Discovery can follow address changes on
+   supported units, but does not work on every model. You can add several units.
 4. **Pair.** This is the awkward part, and the order matters:
    - power the air conditioner **off**
    - press *Start pairing*
@@ -209,6 +209,29 @@ is never withdrawn afterwards — some units publish nothing until they are runn
    port 8889 the moment it powers on, and that callback carries the token.
 
 The token is stored alongside the certificate, outside `config.json`.
+
+### Address discovery
+
+After pairing, the plugin automatically reads `deviceUuid` from its stored pairing
+record. No UUID configuration field is needed. Keep the configured `host` as the
+pairing-record key and last-known-address hint. Units configured only with a token,
+without a stored UUID, keep the fixed-address behavior.
+
+Each connection attempt tries the last-known address immediately, alongside a
+bounded SSDP search. A working address does not wait for multicast. If it fails,
+the plugin can try a different address found by the search. Only searches are
+throttled for 30 seconds; requests can retry the known address during that time.
+The authenticated API must identify the paired device before any control is sent;
+sibling documents may have different UUIDs. Uncertain writes are never replayed.
+Offline paired units retry startup every 30 seconds and retain their cached
+HomeKit identities.
+
+Multicast support is model/network dependent. A saved multicast-only verification
+on 2026-11-04 discovered all three tested TP6X_RAC_17K units without unicast hints
+or device writes. That is one successful recorded round, not a reliability study.
+The maintainer's TP6X_RAC_16K answered unicast but not multicast in testing. Unicast
+to a last-known address cannot recover a unit that moved when multicast is silent;
+use a DHCP reservation in that case. No 16K multicast support is claimed.
 
 ### If pairing never completes
 

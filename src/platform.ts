@@ -3,11 +3,13 @@ import type {
 } from 'homebridge';
 import { normaliseConfig, NormalisedConfig } from './config';
 import { DeviceAdapter } from './deviceAdapter';
+import { normaliseDeviceUuid, SsdpDiscovery } from './discovery/ssdp';
 import { SamsungRacAccessory } from './platformAccessory';
 import { devicesFrom, RacDeviceDocument, RacDevicesResponse } from './racStatus';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { CertificateStore } from './transport/certificate';
-import { LocalApi, TokenInvalidError } from './transport/localApi';
+import { DeviceApi, LocalApi, TokenInvalidError } from './transport/localApi';
+import { DiscoveredApi } from './transport/discoveredApi';
 import { TokenStore } from './transport/tokenStore';
 
 interface AccessoryContext {
@@ -45,6 +47,13 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
   private readonly handlers: SamsungRacAccessory[] = [];
   private readonly certificates: CertificateStore;
   private readonly tokens: TokenStore;
+  private discovery?: SsdpDiscovery;
+  private readonly discoveryHosts = new Set<string>();
+  private readonly activeHosts = new Set<string>();
+  private readonly liveUuids = new Set<string>();
+  private readonly registered = new Map<string, string[]>();
+  private retryTimer?: ReturnType<typeof setTimeout>;
+  private shuttingDown = false;
 
   constructor(
     readonly log: Logging,
@@ -68,12 +77,13 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     this.api.on('didFinishLaunching', () => {
       // Nothing above catches for us here: an unhandled rejection out of
       // discovery would take the whole Homebridge process down with it.
-      this.discoverDevices().catch((error) => {
-        this.log.error(`Device discovery failed: ${messageOf(error)}`);
-      });
+      this.runDiscovery();
     });
 
     this.api.on('shutdown', () => {
+      this.shuttingDown = true;
+      clearTimeout(this.retryTimer);
+      this.discovery?.close();
       for (const handler of this.handlers) {
         try {
           handler.stop();
@@ -90,8 +100,20 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     this.cachedAccessories.push(accessory);
   }
 
+  private runDiscovery(): void {
+    this.discoverDevices().catch((error) => {
+      this.log.error(`Device discovery failed: ${messageOf(error)}`);
+    }).finally(() => {
+      // A unit unavailable at startup must recover without another Homebridge restart.
+      if (!this.shuttingDown && this.settings.devices.some(device => this.discoveryHosts.has(device.host) && !this.activeHosts.has(device.host))) {
+        this.retryTimer = setTimeout(() => this.runDiscovery(), 30000);
+        this.retryTimer.unref();
+      }
+    });
+  }
+
   private async discoverDevices(): Promise<void> {
-    if (!this.settings.devices.length) {
+    if (this.shuttingDown || !this.settings.devices.length) {
       return;
     }
 
@@ -107,11 +129,26 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
       return;
     }
 
-    const liveUuids = new Set<string>();
+    const pairings = await this.tokens.all();
+    const pairedDevices = this.settings.devices.map(device => ({
+      device, record: pairings[device.host], uuid: normaliseDeviceUuid(pairings[device.host]?.deviceUuid),
+    }));
+    for (const { device, uuid } of pairedDevices) {
+      if (uuid) { this.discoveryHosts.add(device.host); }
+    }
+    this.discovery ??= new SsdpDiscovery(pairedDevices.flatMap(({ device, uuid }) => uuid ? [{ uuid, host: device.host }] : []));
+
+    const liveUuids = this.liveUuids;
     let allReachable = true;
 
-    for (const device of this.settings.devices) {
-      const token = device.token ?? (await this.tokens.get(device.host))?.token;
+    for (const { device, record, uuid } of pairedDevices) {
+      if (this.shuttingDown) {
+        return;
+      }
+      if (this.activeHosts.has(device.host)) {
+        continue;
+      }
+      const token = device.token ?? record?.token;
 
       if (!token) {
         // Not an error: a fresh install has hosts configured and nothing paired
@@ -125,13 +162,16 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
 
       this.log.debug(`Using a ${device.token ? 'config.json' : 'paired'} token for ${device.host}.`);
 
-      const api = new LocalApi({
+      const options = {
         host: device.host,
         pem,
         token,
         timeoutMs: this.settings.requestTimeoutMs,
         log: this.log,
-      });
+      };
+      const api: DeviceApi = uuid
+        ? new DiscoveredApi(options, uuid, this.discovery, this.log)
+        : new LocalApi(options);
 
       let documents: RacDeviceDocument[];
       try {
@@ -154,8 +194,13 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
         continue;
       }
 
+      if (this.shuttingDown) {
+        api.close();
+        return;
+      }
       this.log.debug(`${device.host} reported ${documents.length} device(s).`);
 
+      let registeredAll = true;
       for (const document of documents) {
         // One unit failing to set up must not abort discovery for the rest, and
         // must not escape as an unhandled rejection either.
@@ -164,6 +209,7 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
             liveUuids.add(uuid);
           }
         } catch (error) {
+          registeredAll = false;
           allReachable = false;
           this.log.error(
             `Could not set up the accessory for ${device.host} (device ${document.id ?? '0'}): `
@@ -171,12 +217,15 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
           );
         }
       }
+      if (registeredAll) {
+        this.activeHosts.add(device.host);
+      }
     }
 
     // Only prune when every configured unit answered. Otherwise one air
     // conditioner being unplugged at restart would delete its HomeKit tile,
     // taking the user's automations and room assignment with it.
-    if (allReachable) {
+    if (allReachable && !this.shuttingDown) {
       this.removeStaleAccessories(liveUuids);
     } else if (this.cachedAccessories.some((accessory) => !liveUuids.has(accessory.UUID))) {
       this.log.info('Keeping cached accessories for units that did not answer; nothing was removed.');
@@ -186,7 +235,7 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
   private async registerDevice(
     host: string,
     document: RacDeviceDocument,
-    api: LocalApi,
+    api: DeviceApi,
     multiple: boolean,
   ): Promise<string[]> {
     const deviceId = document.id ?? '0';
@@ -194,6 +243,10 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     // not orphan the accessory and its automations.
     const seed = document.uuid ? `samsung-rac:${document.uuid}` : `samsung-rac:${host}:${deviceId}`;
     const uuid = this.api.hap.uuid.generate(seed);
+    const registered = this.registered.get(uuid);
+    if (registered) {
+      return registered;
+    }
 
     const device = this.settings.devices.find((entry) => entry.host === host);
     const configured = device?.name;
@@ -224,7 +277,12 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
 
     // Populate before HomeKit ever sees the accessory, so its first look
     // already has real values rather than placeholders.
-    this.handlers.push(await SamsungRacAccessory.create(this, accessory, adapter, outdoor));
+    const handler = await SamsungRacAccessory.create(this, accessory, adapter, outdoor);
+    if (this.shuttingDown) {
+      handler.stop();
+      throw new Error('Homebridge is shutting down.');
+    }
+    this.handlers.push(handler);
 
     if (existing) {
       this.log.info('Restoring accessory from cache:', displayName);
@@ -238,9 +296,11 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
     // An outdoor accessory the handler never published — because this unit
     // reports no reading, or because the setting changed — is left out of the
     // live set, so it is pruned like any other accessory that no longer exists.
-    return outdoor && this.published.has(outdoor.accessory.UUID)
+    const registeredUuids = outdoor && this.published.has(outdoor.accessory.UUID)
       ? [uuid, outdoor.accessory.UUID]
       : [uuid];
+    this.registered.set(uuid, registeredUuids);
+    return registeredUuids;
   }
 
   /**
@@ -273,6 +333,8 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
           return;
         }
         this.published.add(uuid);
+        // A late sensor must survive a later startup-recovery pass for another AC.
+        this.liveUuids.add(uuid);
 
         if (cached) {
           this.log.info('Restoring the outdoor sensor from cache:', displayName);
