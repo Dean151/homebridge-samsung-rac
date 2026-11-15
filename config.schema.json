@@ -196,6 +196,32 @@
           }
         }
       },
+      "goodSleepMinutes": {
+        "title": "Good Sleep duration",
+        "type": "integer",
+        "default": 0,
+        "oneOf": [
+          {
+            "title": "Disabled",
+            "enum": [
+              0
+            ]
+          },
+          {
+            "title": "1 hour",
+            "enum": [
+              60
+            ]
+          },
+          {
+            "title": "2 hours",
+            "enum": [
+              120
+            ]
+          }
+        ],
+        "description": "Opt-in native sleep control for units reporting Sleep. Verified on TP6X_RAC_17K in Cool mode; other models may reject it. Device read-back determines success."
+      },
       "certificateUrl": {
         "title": "Client certificate URL",
         "type": "string",
@@ -230,6 +256,7 @@
     "freezeIndoorTemperatureWhenOff",
     "autoClean",
     "purify",
+    "goodSleepMinutes",
     {
       "type": "fieldset",
       "title": "Advanced",

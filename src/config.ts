@@ -95,6 +95,8 @@ export interface NormalisedConfig {
   autoClean: { name?: string } | null;
   /** Publish the persistent SPI setting when the unit reports it. */
   purify: { name?: string } | null;
+  /** Opt-in native Good Sleep duration; null keeps the switch hidden. */
+  goodSleepMinutes: number | null;
   certificateUrl?: string;
 }
 
@@ -270,10 +272,22 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
     autoClean: toNamedSwitch(config.autoClean, 'autoClean', log),
     purify: toNamedSwitch(config.purify, 'purify', log),
+    goodSleepMinutes: toGoodSleepMinutes(config.goodSleepMinutes, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
   };
+}
+
+function toGoodSleepMinutes(value: unknown, log: Logging): number | null {
+  if (value === undefined || value === 0) {
+    return null;
+  }
+  if (value === 60 || value === 120) {
+    return value;
+  }
+  log.warn('Ignoring goodSleepMinutes: the verified durations are 60 and 120 minutes.');
+  return null;
 }
 
 /**

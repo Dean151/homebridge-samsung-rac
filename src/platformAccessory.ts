@@ -32,7 +32,7 @@ const switchLabels: Record<string, string> = {
 };
 
 /** Subtype prefixes for the switches this plugin owns, so it only removes its own. */
-const switchSubtypes = { comode: 'comode-', mode: 'mode-', autoClean: 'setting-autoclean', purify: 'setting-spi' } as const;
+const switchSubtypes = { comode: 'comode-', mode: 'mode-', autoClean: 'setting-autoclean', purify: 'setting-spi', goodSleep: 'good-sleep' } as const;
 
 /**
  * What to call a switch in the log, and the tail of its HomeKit name when the
@@ -562,8 +562,24 @@ export class SamsungRacAccessory {
       });
     }
 
+    const sleepMinutes = this.platform.settings.goodSleepMinutes;
+    if (sleepMinutes !== null) {
+      specs.push({
+        subtype: switchSubtypes.goodSleep,
+        group: 'comode',
+        label: 'Good Sleep',
+        displayName: `${this.accessory.displayName} Good Sleep`,
+        available: status => /^\d+$/.test(status.options.Sleep ?? ''),
+        isOn: status => status.active && status.comode === 'Sleep',
+        write: on => () => this.adapter.setGoodSleep(on ? sleepMinutes : null),
+      });
+    }
+
     for (const entry of this.platform.settings.convenienceModes) {
       const name = entry.value;
+      if (sleepMinutes !== null && name.toLowerCase() === 'sleep') {
+        continue; // The native duration-aware control owns Good Sleep when enabled.
+      }
       specs.push({
         // Keyed on the unit's word, never on the label: renaming a switch must
         // not move the subtype the user's automations point at.
@@ -639,7 +655,7 @@ export class SamsungRacAccessory {
     for (const service of [...this.accessory.services]) {
       const subtype = service.subtype ?? '';
       const ours = subtype.startsWith(switchSubtypes.comode) || subtype.startsWith(switchSubtypes.mode)
-        || subtype === switchSubtypes.autoClean || subtype === switchSubtypes.purify;
+        || subtype === switchSubtypes.autoClean || subtype === switchSubtypes.purify || subtype === switchSubtypes.goodSleep;
       if (service.UUID === this.platform.Service.Switch.UUID && ours && !wanted.has(subtype)) {
         this.platform.log.info(`${this.accessory.displayName}: removing the switch for '${subtype}'.`);
         this.accessory.removeService(service);

@@ -106,6 +106,28 @@ effectiveness. Changes are confirmed by read-back. If firmware ignores a change
 while the unit is off, a warning asks you to turn it on first. Changes from the
 remote/app are included in the debug status log.
 
+### Native Good Sleep
+
+Set `"goodSleepMinutes": 60` or `120` to add one Good Sleep switch; `0` or omission
+disables it. It is available on any model reporting a numeric `Sleep` option, but
+only TP6X_RAC_17K has been verified. Start with the unit running in Cool mode.
+The switch also reflects sleep started from the Samsung app and suppresses a
+configured legacy `Sleep` preset while this duration-aware control is enabled.
+
+`Sleep_N` uses 30-minute steps on the tested units. Starting stages the duration,
+selects `Comode_Sleep`, then reapplies the duration. Cancelling uses `Comode_Off`
+and verifies power remains unchanged; `Sleep_0` is never sent because it powers
+off the tested units. A complete cycle/automatic expiry remains unobserved.
+
+The sequence uses the existing write queue so other controls cannot split it;
+polling and ordinary duplicate-write rules are unchanged. A failed write stops
+the sequence and triggers a fresh read. The switch is corrected to the observed
+state and a warning includes the failed step and current state. If that read
+also fails, the state is reported unknown. A lost response can follow an applied
+write, so neither replay nor a speculative rollback is attempted. On a second-step
+failure a staged duration may remain; after entering Sleep, a later failure may
+leave Sleep running. Check the displayed state or the AC in either case.
+
 ### Naming the switches
 
 An entry in either list can be a bare mode name or an object carrying the name
