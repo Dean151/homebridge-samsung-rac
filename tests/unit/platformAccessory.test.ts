@@ -79,6 +79,7 @@ async function build(options: {
     setWindDirection: jest.fn(applied('Up_And_Low')),
     setComode: jest.fn(applied('Quiet')),
     setAutoClean: jest.fn(applied('On')),
+    setSpi: jest.fn(applied('On')),
     close: jest.fn(),
   };
 
@@ -158,6 +159,19 @@ describe('SamsungRacAccessory', () => {
       expect(name().value).toBe('Chosen name');
       await name().setHandler?.('My Home name');
       await build({ accessory, settings: { autoClean: { name: 'Changed config' } }, status: { options: { Autoclean: 'Off' } } });
+      expect(name().value).toBe('My Home name');
+      expect(h.heaterCooler).toBe(accessory.getService(Service.HeaterCooler));
+    });
+  });
+
+  describe('Purify naming', () => {
+    it('uses the configured name and preserves an existing custom Home name', async () => {
+      const accessory = new FakeAccessory();
+      const h = await build({ accessory, settings: { purify: { name: 'Chosen name' } }, status: { options: { Spi: 'Off' } } });
+      const name = () => accessory.getServiceById(Service.Switch, 'setting-spi')!.getCharacteristic(Characteristic.ConfiguredName);
+      expect(name().value).toBe('Chosen name');
+      await name().setHandler?.('My Home name');
+      await build({ accessory, settings: { purify: { name: 'Changed config' } }, status: { options: { Spi: 'Off' } } });
       expect(name().value).toBe('My Home name');
       expect(h.heaterCooler).toBe(accessory.getService(Service.HeaterCooler));
     });
@@ -1164,6 +1178,20 @@ describe('SamsungRacAccessory', () => {
       expect(on(accessory.getServiceById(Service.Switch, 'mode-dry'))?.value).toBe(true);
     });
 
+    it('keeps Purify enabled while powered off and does not alter modes or power', async () => {
+      const { accessory, adapter } = await build({
+        status: { active: false, options: { Spi: 'On' }, mode: 'Dry' },
+        settings: { purify: {}, modeSwitches: ['Dry'] },
+      });
+      const clean = accessory.getServiceById(Service.Switch, 'setting-spi');
+      expect(on(clean)?.getHandler?.()).toBe(true);
+      await on(clean)?.setHandler?.(false);
+      expect(adapter.setSpi).toHaveBeenCalledWith(false);
+      expect(adapter.setPower).not.toHaveBeenCalled();
+      expect(adapter.setMode).not.toHaveBeenCalled();
+      expect(on(accessory.getServiceById(Service.Switch, 'mode-dry'))?.value).toBe(true);
+    });
+
     it('publishes Auto-clean only when enabled in config and the unit reports On or Off', async () => {
       for (const value of [undefined, 'Unknown', 'Off']) {
         const { accessory } = await build({
@@ -1175,6 +1203,19 @@ describe('SamsungRacAccessory', () => {
       cached.addService(Service.Switch, 'Auto Clean', 'setting-autoclean');
       const { accessory } = await build({ accessory: cached, status: { options: { Autoclean: 'On' } } });
       expect(accessory.getServiceById(Service.Switch, 'setting-autoclean')).toBeUndefined();
+    });
+
+    it('publishes Purify only when enabled in config and the unit reports On or Off', async () => {
+      for (const value of [undefined, 'Unknown', 'Off']) {
+        const { accessory } = await build({
+          status: { options: value ? { Spi: value } : {} }, settings: { purify: {} },
+        });
+        expect(Boolean(accessory.getServiceById(Service.Switch, 'setting-spi'))).toBe(value === 'Off');
+      }
+      const cached = new FakeAccessory();
+      cached.addService(Service.Switch, 'Purify', 'setting-spi');
+      const { accessory } = await build({ accessory: cached, status: { options: { Spi: 'On' } } });
+      expect(accessory.getServiceById(Service.Switch, 'setting-spi')).toBeUndefined();
     });
 
     it('returns to the mode the unit was in before, when a mode switch goes off', async () => {

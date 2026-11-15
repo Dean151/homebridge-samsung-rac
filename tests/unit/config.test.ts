@@ -25,6 +25,14 @@ describe('normaliseConfig', () => {
     expect(normaliseConfig({ platform: 'x', autoClean: [] } as never, logger() as never).autoClean).toBeNull();
   });
 
+  it('normalises the optional named Purify switch', () => {
+    expect(normaliseConfig({ platform: 'x' }, logger() as never).purify).toBeNull();
+    expect(normaliseConfig({ platform: 'x', purify: { name: ' My switch ' } } as never, logger() as never).purify)
+      .toEqual({ name: 'My switch' });
+    expect(normaliseConfig({ platform: 'x', purify: { enabled: false, name: 'Hidden' } } as never, logger() as never).purify).toBeNull();
+    expect(normaliseConfig({ platform: 'x', purify: [] } as never, logger() as never).purify).toBeNull();
+  });
+
   it('fills in the defaults' , () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

@@ -93,6 +93,8 @@ export interface NormalisedConfig {
   modeSwitches: ModeSwitchConfig[];
   /** Publish the persistent self-drying setting when the unit reports it. */
   autoClean: { name?: string } | null;
+  /** Publish the persistent SPI setting when the unit reports it. */
+  purify: { name?: string } | null;
   certificateUrl?: string;
 }
 
@@ -267,6 +269,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
     autoClean: toNamedSwitch(config.autoClean, 'autoClean', log),
+    purify: toNamedSwitch(config.purify, 'purify', log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,

@@ -113,6 +113,24 @@ describe('reads', () => {
     await expect(adapter.setAutoClean(true)).resolves.toMatchObject({ applied: false, actual: 'Off' });
   });
 
+  it('writes only Purify and confirms the setting without disturbing other options', async () => {
+    const { adapter, put, document, applyWrites } = build();
+    document.Mode!.options = ['Comode_Quiet', 'Spi_Off'];
+    applyWrites((body, doc) => {
+      doc.Mode!.options = ['Comode_Quiet', body.Mode.options[0]];
+    });
+    await expect(adapter.setSpi(true)).resolves.toMatchObject({ applied: true, actual: 'On' });
+    expect(put).toHaveBeenLastCalledWith('/devices/0/mode', { Mode: { options: ['Spi_On'] } });
+    expect(document.Mode!.options).toEqual(['Comode_Quiet', 'Spi_On']);
+    await expect(adapter.setSpi(false)).resolves.toMatchObject({ applied: true, actual: 'Off' });
+  });
+
+  it('does not treat HTTP success as an applied Purify change', async () => {
+    const { adapter, document } = build();
+    document.Mode!.options = ['Spi_Off'];
+    await expect(adapter.setSpi(true)).resolves.toMatchObject({ applied: false, actual: 'Off' });
+  });
+
   it('parses the device the unit reports', async () => {
     const { adapter } = build();
     await expect(adapter.getStatus()).resolves.toMatchObject({ mode: 'Cool', active: true, maxSpeedLevel: 4 });
@@ -358,15 +376,48 @@ describe('a unit configured in Fahrenheit', () => {
   });
 });
 
-describe('Auto Clean feedback', () => {
-  it('warns when an off unit discards the setting', async () => {
-    const h = build(); h.document.Operation!.power = 'Off'; h.document.Mode!.options = ['Autoclean_Off'];
-    expect((await h.adapter.setAutoClean(true)).applied).toBe(false);
-    expect(h.log.warn).toHaveBeenCalledWith(expect.stringContaining('turn the unit on first'));
+describe.each([
+  ['Auto Clean', 'Autoclean', 'setAutoClean'],
+  ['Purify', 'Spi', 'setSpi'],
+] as const)('%s feedback', (label, option, setter) => {
+  it.each([true, false])('warns when an off unit discards a change to %s', async (on) => {
+    const h = build({ label: 'Living room AC' });
+    h.document.Operation!.power = 'Off';
+    h.document.Mode!.options = [`${option}_${on ? 'Off' : 'On'}`];
+
+    expect((await h.adapter[setter](on)).applied).toBe(false);
+    expect(h.log.warn).toHaveBeenCalledTimes(1);
+    expect(h.log.warn).toHaveBeenCalledWith(
+      `Living room AC: ${label} was not applied while the unit is off; turn the unit on first.`,
+    );
   });
+
+  it('does not warn when an off unit accepts the setting', async () => {
+    const h = build();
+    h.document.Operation!.power = 'Off';
+    h.document.Mode!.options = [`${option}_Off`];
+    h.applyWrites((body, document) => { document.Mode!.options = body.Mode.options; });
+
+    expect((await h.adapter[setter](true)).applied).toBe(true);
+    expect(h.log.warn).not.toHaveBeenCalled();
+  });
+
+  it('uses the normal rejection warning when the unit is already on', async () => {
+    const h = build();
+    h.document.Mode!.options = [`${option}_Off`];
+
+    expect((await h.adapter[setter](true)).applied).toBe(false);
+    expect(h.log.warn).toHaveBeenCalledTimes(1);
+    expect(h.log.warn).toHaveBeenCalledWith(expect.stringContaining(`Mode.options.${option}`));
+    expect(h.log.warn).not.toHaveBeenCalledWith(expect.stringContaining('turn the unit on first'));
+  });
+
   it('logs changes made by another controller', async () => {
-    const h = build(); h.document.Mode!.options = ['Autoclean_Off'];
-    await h.adapter.getStatus(); h.document.Mode!.options = ['Autoclean_On']; await h.adapter.getStatus();
-    expect(h.log.debug).toHaveBeenCalledWith(expect.stringContaining('Autoclean Off -> On'));
+    const h = build();
+    h.document.Mode!.options = [`${option}_Off`];
+    await h.adapter.getStatus();
+    h.document.Mode!.options = [`${option}_On`];
+    await h.adapter.getStatus();
+    expect(h.log.debug).toHaveBeenCalledWith(expect.stringContaining(`${option} Off -> On`));
   });
 });
