@@ -8,7 +8,16 @@ function logger() {
 }
 
 describe('normaliseConfig', () => {
-  it('fills in the defaults', () => {
+  it('hides an outdoor sensor only for the selected device', () => {
+    const config = normaliseConfig({ platform: 'x', devices: [
+      { host: '192.0.2.1', hideOutdoorTemperature: true }, { host: '192.0.2.2' },
+    ] } as never, logger() as never);
+    expect(config.devices[0].hideOutdoorTemperature).toBe(true);
+    expect(config.devices[1].hideOutdoorTemperature).toBeUndefined();
+    expect(config.outdoorTemperaturePlacement).toBe('linked');
+  });
+
+  it('fills in the defaults' , () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({
       devices: [],

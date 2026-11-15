@@ -215,10 +215,10 @@ export class SamsungRacPlatform implements DynamicPlatformPlugin {
 
     const adapter = new DeviceAdapter(api, deviceId, this.log, {
       label: displayName,
-      outdoorTemperatureUnit: this.settings.outdoorTemperatureUnit,
+      outdoorTemperatureUnit: device?.hideOutdoorTemperature ? null : this.settings.outdoorTemperatureUnit,
     });
 
-    const outdoor = this.settings.outdoorTemperaturePlacement === 'separate'
+    const outdoor = !device?.hideOutdoorTemperature && this.settings.outdoorTemperaturePlacement === 'separate'
       ? this.outdoorAccessoryFor(uuid, displayName, context)
       : undefined;
 
