@@ -350,7 +350,7 @@ Measured on a TP6X_RAC_16K, 2026-09-15:
 |---|---|
 | Method | `PUT` only — `POST` returns 405 |
 | Power, fan speed, setpoint, mode | all applied |
-| Vane | `Fix` and `Up_And_Low` applied; `Vertical` and `SwingUD` rejected with 400; `All` accepted and then ignored |
+| Vane | `Fix` and `Up_And_Low` applied; `Vertical` and `SwingUD` rejected with 400. The unit has no horizontal vane, and keeps only the vertical half of a two-axis value: `All` became `Up_And_Low` and `Left_And_Right` became `Fix` (re-measured 2026-11-16) |
 | Convenience mode (`Comode`) | `Comfort`, `Quiet`, `Speed`, `Smart`, `2Step` and `Sleep` applied; `WindFree` and `SoftCool` ignored |
 | Auto-clean | applied |
 | Sleep timer (`Sleep`) | not applied |

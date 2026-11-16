@@ -155,8 +155,9 @@ export function buildMatrix(device: RacDeviceDocument): Attempt[] {
   };
 
   // The headline feature. The Samsung app offers only Vertical/Fixe on this
-  // unit, but the OCF vendor extension documents four values, so try them all.
-  for (const value of ['Up_And_Low', 'Vertical', 'SwingUD', 'All']) {
+  // unit, but the OCF vendor extension documents four values, so try them all —
+  // plus Left_And_Right, which a TP6X_RAC_17K applies for its horizontal vane.
+  for (const value of ['Up_And_Low', 'Left_And_Right', 'Vertical', 'SwingUD', 'All']) {
     windDirection(value);
   }
 
