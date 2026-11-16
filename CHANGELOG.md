@@ -32,6 +32,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the air conditioner tiles themselves are untouched. Contributed by @m1h4 in
   #11.
 
+- `goodSleep`, off by default: a switch for the unit's own Good Sleep mode,
+  with its built-in off delay of one hour or, with `"minutes": 120`, two. The
+  unit runs the countdown, so it carries on whether Homebridge does or not. It
+  starts only with the unit running in Cool, and is offered on any unit that
+  reports a numeric `Sleep` option, though so far only a TP6X_RAC_17K has been
+  seen to take it. Turning it on removes a `Sleep` switch from
+  `convenienceModes`, along with any automation that uses it, since both would
+  control the same mode. If one of its three writes fails, the plugin reads
+  what the unit is actually doing and shows that, and never resends a write
+  that may already have landed. Contributed by @m1h4 in #9.
+
+- The plugin can follow a unit to a new address. Pairing already recorded the
+  unit's UUID; each reconnect now tries the last address straight away and
+  sends an SSDP search alongside it, moving to a new address only once the unit
+  there has identified itself through the authenticated API. A unit unreachable
+  when Homebridge starts is retried every 30 seconds instead of waiting for a
+  restart. It depends on the model: three TP6X_RAC_17K units answered the
+  search, the reference unit does not, so a DHCP reservation is still the
+  advice. Contributed by @m1h4 in #2.
+
 ### Changed
 
 - The settings screen no longer names the reference unit, a TP6X_RAC_16K. Its
