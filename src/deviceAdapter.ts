@@ -26,6 +26,10 @@ interface Change {
   body: unknown;
   requested: unknown;
   read: (status: RacStatus) => unknown;
+  /** Warn when an off unit rejects this setting instead of treating it as buffered. */
+  warnWhenOff?: boolean;
+  /** Friendly setting name for user-facing warnings; defaults to the field. */
+  label?: string;
   /**
    * Recompute `body` and `requested` against a fresh status, for a write whose
    * payload depends on something the unit reports — the scale its temperatures
@@ -262,6 +266,21 @@ export class DeviceAdapter {
       body: { Mode: { options: [`Autoclean_${value}`] } },
       requested: value,
       read: (status) => status.options.Autoclean,
+      warnWhenOff: true,
+      label: 'Auto Clean',
+    });
+  }
+
+  setSpi(on: boolean): Promise<ApplyResult> {
+    const value = on ? 'On' : 'Off';
+    return this.applyChange({
+      field: 'Mode.options.Spi',
+      resource: `/devices/${this.deviceId}/mode`,
+      body: { Mode: { options: [`Spi_${value}`] } },
+      requested: value,
+      read: (status) => status.options.Spi,
+      warnWhenOff: true,
+      label: 'Purify',
     });
   }
 
@@ -362,8 +381,8 @@ export class DeviceAdapter {
   private reportRejected(change: Change, actual: unknown, status: RacStatus): void {
     // A powered-off unit buffers some changes and applies them at power-on, so
     // a mismatch there is expected rather than a failure.
-    if (!status.active && change.field === 'Mode.options.Autoclean') {
-      this.log.warn(`${this.label}: Auto Clean was not applied while the unit is off; turn the unit on first.`);
+    if (!status.active && change.warnWhenOff) {
+      this.log.warn(`${this.label}: ${change.label ?? change.field} was not applied while the unit is off; turn the unit on first.`);
       return;
     }
     if (!status.active) {
@@ -396,7 +415,7 @@ const trackedFields = [
   'outdoorTemperature', 'comode', 'filterLife',
 ] as const satisfies readonly (keyof RacStatus)[];
 
-const trackedOptions = ['Autoclean'] as const;
+const trackedOptions = ['Autoclean', 'Spi'] as const;
 
 function format(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value) ?? String(value);

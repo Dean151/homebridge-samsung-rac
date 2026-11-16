@@ -180,6 +180,23 @@
           }
         }
       },
+
+      "purify": {
+        "title": "Purify",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "title": "Show Purify switch",
+            "type": "boolean",
+            "default": false
+          },
+          "name": {
+            "title": "Name in the Home app",
+            "type": "string",
+            "description": "Optional. Used exactly as written."
+          }
+        }
+      },
       "certificateUrl": {
         "title": "Client certificate URL",
         "type": "string",
@@ -213,6 +230,7 @@
     "hideOutdoorTemperatureWhenOff",
     "freezeIndoorTemperatureWhenOff",
     "autoClean",
+    "purify",
     {
       "type": "fieldset",
       "title": "Advanced",

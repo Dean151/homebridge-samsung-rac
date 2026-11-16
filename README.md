@@ -90,6 +90,18 @@ Changes are confirmed by read-back. If firmware ignores a change while the unit
 is off, a warning asks you to turn it on first. Changes from the remote/app are
 included in the debug status log.
 
+### Purify
+
+Set `"purify": {"enabled": true, "name": "Purify"}` to expose the switch
+when the unit reports its setting. Omit `name` to use the AC name followed by
+Purify; names chosen later in Apple Home are preserved. Omit `purify` or set
+`enabled` to false to disable it. A hand-written `{"name": "..."}` also enables it.
+
+The switch reports the retained SPI setting, including while the AC is off. Naming and availability vary by model; this does not measure purification effectiveness.
+Changes are confirmed by read-back. If firmware ignores a change while the unit
+is off, a warning asks you to turn it on first. Changes from the remote/app are
+included in the debug status log.
+
 ### Naming the switches
 
 An entry in either list can be a bare mode name or an object carrying the name
