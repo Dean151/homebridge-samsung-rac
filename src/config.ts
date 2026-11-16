@@ -95,8 +95,8 @@ export interface NormalisedConfig {
   autoClean: { name?: string } | null;
   /** Publish the persistent SPI setting when the unit reports it. */
   purify: { name?: string } | null;
-  /** Opt-in native Good Sleep duration; null keeps the switch hidden. */
-  goodSleepMinutes: number | null;
+  /** Named native Good Sleep switch and off delay; null keeps the switch hidden. */
+  goodSleep: { name?: string; minutes: number } | null;
   certificateUrl?: string;
 }
 
@@ -272,21 +272,24 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
     autoClean: toNamedSwitch(config.autoClean, 'autoClean', log),
     purify: toNamedSwitch(config.purify, 'purify', log),
-    goodSleepMinutes: toGoodSleepMinutes(config.goodSleepMinutes, log),
+    goodSleep: toGoodSleep(config.goodSleep, log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,
   };
 }
 
-function toGoodSleepMinutes(value: unknown, log: Logging): number | null {
-  if (value === undefined || value === 0) {
+function toGoodSleep(value: unknown, log: Logging): NormalisedConfig['goodSleep'] {
+  const named = toNamedSwitch(value, 'goodSleep', log);
+  if (!named) {
     return null;
   }
-  if (value === 60 || value === 120) {
-    return value;
+  const configured = typeof value === 'object' ? (value as { minutes?: unknown }).minutes : undefined;
+  const minutes = configured === undefined ? 60 : configured;
+  if (minutes === 60 || minutes === 120) {
+    return { ...named, minutes };
   }
-  log.warn('Ignoring goodSleepMinutes: the verified durations are 60 and 120 minutes.');
+  log.warn('Ignoring goodSleep: minutes must be 60 or 120.');
   return null;
 }
 

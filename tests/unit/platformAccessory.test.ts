@@ -105,7 +105,7 @@ async function build(options: {
     settings: {
       updateInterval: 3600,
       swingDirection: 'Up_And_Low',
-      goodSleepMinutes: null,
+      goodSleep: null,
       ...options.settings,
       // Tests name modes as plain strings; the real config carries objects, so
       // an entry that wants a custom name can still be written out in full.
@@ -184,8 +184,40 @@ describe('SamsungRacAccessory', () => {
   describe('native Good Sleep', () => {
     const get = (a: FakeAccessory, subtype: string) => a.getServiceById(Service.Switch, subtype);
     const on = (a: FakeAccessory, subtype: string) => get(a, subtype)?.findCharacteristic(Characteristic.On);
-    const settings = { goodSleepMinutes: 60, convenienceModes: ['Nano', '2Step', 'Speed', 'Comfort', 'Quiet', 'Sleep'] };
+    const settings = { goodSleep: { minutes: 60 }, convenienceModes: ['Nano', '2Step', 'Speed', 'Comfort', 'Quiet', 'Sleep'] };
     const status = { model: 'TP6X_RAC_17K', options: { Sleep: '0' }, comode: 'Off' };
+
+    it('uses a configured name and duration while preserving later Home renames', async () => {
+      const accessory = new FakeAccessory();
+      const h = await build({ accessory, settings: { ...settings, goodSleep: { name: 'Bedtime', minutes: 120 } }, status });
+      const name = () => get(accessory, 'good-sleep')!.getCharacteristic(Characteristic.ConfiguredName);
+      expect(name().value).toBe('Bedtime');
+      await on(accessory, 'good-sleep')?.setHandler?.(true);
+      expect(h.adapter.setGoodSleep).toHaveBeenCalledWith(120);
+      await name().setHandler?.('My Home name');
+      h.stop();
+      const restarted = await build({ accessory, settings: { ...settings, goodSleep: { name: 'Changed config', minutes: 60 } }, status });
+      expect(name().value).toBe('My Home name');
+      expect(restarted.heaterCooler).toBe(h.heaterCooler);
+      restarted.stop();
+    });
+
+    it('replaces a cached Sleep convenience switch and restores it when Good Sleep is disabled', async () => {
+      const original = await build({ settings: { convenienceModes: ['Sleep'] }, status });
+      const legacy = get(original.accessory, 'comode-sleep');
+      expect(legacy).toBeDefined();
+      original.stop();
+      const enabled = await build({ accessory: original.accessory, settings, status });
+      expect(get(enabled.accessory, 'comode-sleep')).toBeUndefined();
+      expect(get(enabled.accessory, 'good-sleep')).toBeDefined();
+      expect(enabled.heaterCooler).toBe(original.heaterCooler);
+      enabled.stop();
+      const disabled = await build({ accessory: original.accessory, settings: { ...settings, goodSleep: null }, status });
+      expect(get(disabled.accessory, 'good-sleep')).toBeUndefined();
+      expect(get(disabled.accessory, 'comode-sleep')).toBeDefined();
+      expect(get(disabled.accessory, 'comode-sleep')).not.toBe(legacy);
+      disabled.stop();
+    });
 
     it('publishes one Good Sleep switch without changing preset labels', async () => {
       const h = await build({ settings, status });

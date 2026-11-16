@@ -196,31 +196,41 @@
           }
         }
       },
-      "goodSleepMinutes": {
-        "title": "Good Sleep off delay",
-        "type": "integer",
-        "default": 0,
-        "oneOf": [
-          {
-            "title": "Disabled",
-            "enum": [
-              0
-            ]
+      "goodSleep": {
+        "title": "Good Sleep",
+        "type": "object",
+        "description": "Programs the AC's native Good Sleep mode and off delay. Start with the unit running in Cool mode.",
+        "properties": {
+          "enabled": {
+            "title": "Show Good Sleep switch",
+            "type": "boolean",
+            "default": false
           },
-          {
-            "title": "1 hour",
-            "enum": [
-              60
-            ]
+          "name": {
+            "title": "Name in the Home app",
+            "type": "string",
+            "description": "Optional. Used exactly as written."
           },
-          {
-            "title": "2 hours",
-            "enum": [
-              120
+          "minutes": {
+            "title": "Off delay",
+            "type": "integer",
+            "default": 60,
+            "oneOf": [
+              {
+                "title": "1 hour",
+                "enum": [
+                  60
+                ]
+              },
+              {
+                "title": "2 hours",
+                "enum": [
+                  120
+                ]
+              }
             ]
           }
-        ],
-        "description": "Programs the AC's native Good Sleep mode and off delay. Start/cancel and duration read-back verified on TP6X_RAC_17K in Cool mode; full-cycle expiry remains unverified. Other models may reject it."
+        }
       },
       "certificateUrl": {
         "title": "Client certificate URL",
@@ -256,7 +266,7 @@
     "freezeIndoorTemperatureWhenOff",
     "autoClean",
     "purify",
-    "goodSleepMinutes",
+    "goodSleep",
     {
       "type": "fieldset",
       "title": "Advanced",

@@ -562,22 +562,22 @@ export class SamsungRacAccessory {
       });
     }
 
-    const sleepMinutes = this.platform.settings.goodSleepMinutes;
-    if (sleepMinutes !== null) {
+    const goodSleep = this.platform.settings.goodSleep;
+    if (goodSleep) {
       specs.push({
         subtype: switchSubtypes.goodSleep,
         group: 'comode',
         label: 'Good Sleep',
-        displayName: `${this.accessory.displayName} Good Sleep`,
+        displayName: goodSleep.name ?? `${this.accessory.displayName} Good Sleep`,
         available: status => /^\d+$/.test(status.options.Sleep ?? ''),
         isOn: status => status.active && status.comode === 'Sleep',
-        write: on => () => this.adapter.setGoodSleep(on ? sleepMinutes : null),
+        write: on => () => this.adapter.setGoodSleep(on ? goodSleep.minutes : null),
       });
     }
 
     for (const entry of this.platform.settings.convenienceModes) {
       const name = entry.value;
-      if (sleepMinutes !== null && name.toLowerCase() === 'sleep') {
+      if (goodSleep && name.toLowerCase() === 'sleep') {
         continue; // The native duration-aware control owns Good Sleep when enabled.
       }
       specs.push({

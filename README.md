@@ -108,13 +108,21 @@ remote/app are included in the debug status log.
 
 ### Native Good Sleep
 
-Set `"goodSleepMinutes": 60` or `120` to add one Good Sleep switch with a native
-off delay of one or two hours; `0` or omission disables it. Turning the switch on
-programs the AC's Good Sleep mode and duration. It is available on any model
-reporting a numeric `Sleep` option, but
-only TP6X_RAC_17K has been verified. Start with the unit running in Cool mode.
-The switch also reflects sleep started from the Samsung app and suppresses a
-configured legacy `Sleep` preset while this duration-aware control is enabled.
+Set `"goodSleep": {"enabled": true, "name": "Good Sleep", "minutes": 60}` to add
+one Good Sleep switch. The native off delay is `60` minutes by default; `120`
+selects two hours. Omit `name` to use the AC name followed by Good Sleep; names
+chosen later in Apple Home are preserved. Omit `goodSleep` or set `enabled` to
+false to disable it. A hand-written `{"name": "...", "minutes": 120}` also enables it.
+
+Turning the switch on programs the AC's Good Sleep mode and duration. It is
+available on any model reporting a numeric `Sleep` option, but only
+TP6X_RAC_17K has been verified. Start with the unit running in Cool mode.
+The switch also reflects sleep started from the Samsung app.
+
+**Enabling Good Sleep removes an existing Sleep convenience switch from Home,
+along with any automations that use it.** Recreate those automations using the
+new Good Sleep switch. Disabling Good Sleep restores a configured Sleep
+convenience switch, but does not restore its previous automations.
 
 `Sleep_N` uses 30-minute steps on the tested units. Starting stages the duration,
 selects `Comode_Sleep`, then reapplies the duration. Cancelling uses `Comode_Off`
