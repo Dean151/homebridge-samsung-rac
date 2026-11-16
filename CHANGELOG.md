@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   search, the reference unit does not, so a DHCP reservation is still the
   advice. Contributed by @m1h4 in #2.
 
+- `detailedSwing`, off by default: Vertical and Horizontal swing switches, so
+  each axis can be turned on and off without touching the other. The
+  direction to send is worked out from a fresh read inside the write queue, so
+  two quick taps combine instead of one overwriting the other. A unit without
+  a horizontal vane, like the TP6X_RAC_16K, keeps only the vertical half of
+  what it is sent, so there the Horizontal switch flips back while Vertical
+  works as usual. The air conditioner tile's own Swing control is unchanged.
+  Contributed by @m1h4 in #6.
+
 ### Changed
 
 - The settings screen no longer names the reference unit, a TP6X_RAC_16K. Its
