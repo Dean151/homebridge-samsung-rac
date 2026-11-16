@@ -17,6 +17,14 @@ describe('normaliseConfig', () => {
     expect(config.outdoorTemperaturePlacement).toBe('linked');
   });
 
+  it('normalises the optional named Auto Clean switch', () => {
+    expect(normaliseConfig({ platform: 'x' }, logger() as never).autoClean).toBeNull();
+    expect(normaliseConfig({ platform: 'x', autoClean: { name: ' My switch ' } } as never, logger() as never).autoClean)
+      .toEqual({ name: 'My switch' });
+    expect(normaliseConfig({ platform: 'x', autoClean: { enabled: false, name: 'Hidden' } } as never, logger() as never).autoClean).toBeNull();
+    expect(normaliseConfig({ platform: 'x', autoClean: [] } as never, logger() as never).autoClean).toBeNull();
+  });
+
   it('fills in the defaults' , () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

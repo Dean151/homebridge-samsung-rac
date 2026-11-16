@@ -91,6 +91,8 @@ export interface NormalisedConfig {
    * the Samsung app; the plugin reports them as Auto and leaves them alone.
    */
   modeSwitches: ModeSwitchConfig[];
+  /** Publish the persistent self-drying setting when the unit reports it. */
+  autoClean: { name?: string } | null;
   certificateUrl?: string;
 }
 
@@ -192,6 +194,28 @@ function toHeating(value: unknown, host: string, log: Logging): boolean | undefi
   return undefined;
 }
 
+function toNamedSwitch(value: unknown, key: string, log: Logging): { name?: string } | null {
+  if (value === undefined || value === null || value === false) {
+    return null;
+  }
+  if (value === true) {
+    return {};
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    log.warn(`Ignoring ${key}: use { enabled: true, name: "..." } to enable the switch.`);
+    return null;
+  }
+  const option = value as { enabled?: unknown; name?: unknown };
+  if (option.enabled === false) {
+    return null;
+  }
+  if (option.enabled !== undefined && option.enabled !== true) {
+    log.warn(`Ignoring ${key}: enabled must be true or false.`);
+    return null;
+  }
+  return { name: typeof option.name === 'string' && option.name.trim() ? option.name.trim() : undefined };
+}
+
 export function normaliseConfig(config: PlatformConfig, log: Logging): NormalisedConfig {
   const raw = Array.isArray(config.devices) ? (config.devices as unknown[]) : [];
   const devices: DeviceConfig[] = [];
@@ -242,6 +266,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
       config.freezeIndoorTemperatureWhenOff, 'freezeIndoorTemperatureWhenOff', log),
     convenienceModes: toSwitchList(config.convenienceModes, 'convenienceModes', log),
     modeSwitches: toSwitchList(config.modeSwitches, 'modeSwitches', log),
+    autoClean: toNamedSwitch(config.autoClean, 'autoClean', log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,

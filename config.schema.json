@@ -164,6 +164,22 @@
         "default": 5,
         "minimum": 1
       },
+      "autoClean": {
+        "title": "Auto Clean",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "title": "Show Auto Clean switch",
+            "type": "boolean",
+            "default": false
+          },
+          "name": {
+            "title": "Name in the Home app",
+            "type": "string",
+            "description": "Optional. Used exactly as written."
+          }
+        }
+      },
       "certificateUrl": {
         "title": "Client certificate URL",
         "type": "string",
@@ -196,6 +212,7 @@
     "outdoorTemperatureUnit",
     "hideOutdoorTemperatureWhenOff",
     "freezeIndoorTemperatureWhenOff",
+    "autoClean",
     {
       "type": "fieldset",
       "title": "Advanced",
