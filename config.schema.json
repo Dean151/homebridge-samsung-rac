@@ -23,7 +23,7 @@
               "type": "string",
               "required": true,
               "format": "ipv4",
-              "description": "The unit's address on your network. Give it a fixed DHCP lease on your router — the plugin cannot follow it if it moves."
+              "description": "Reserve this address with a DHCP reservation in your router. Paired units can discover address changes on supported models, but discovery does not work on every model."
             },
             "hideOutdoorTemperature": {
               "title": "Hide this unit’s outdoor sensor",
