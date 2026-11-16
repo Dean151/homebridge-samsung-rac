@@ -97,6 +97,7 @@ export interface NormalisedConfig {
   purify: { name?: string } | null;
   /** Named native Good Sleep switch and off delay; null keeps the switch hidden. */
   goodSleep: { name?: string; minutes: number } | null;
+  detailedSwing: boolean;
   certificateUrl?: string;
 }
 
@@ -273,6 +274,7 @@ export function normaliseConfig(config: PlatformConfig, log: Logging): Normalise
     autoClean: toNamedSwitch(config.autoClean, 'autoClean', log),
     purify: toNamedSwitch(config.purify, 'purify', log),
     goodSleep: toGoodSleep(config.goodSleep, log),
+    detailedSwing: toBoolean(config.detailedSwing, 'detailedSwing', log),
     certificateUrl: typeof config.certificateUrl === 'string' && config.certificateUrl.trim()
       ? config.certificateUrl.trim()
       : undefined,

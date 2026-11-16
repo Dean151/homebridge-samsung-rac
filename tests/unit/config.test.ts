@@ -54,6 +54,12 @@ describe('normaliseConfig', () => {
     }
   });
 
+  it('keeps separate swing controls opt-in', () => {
+    expect(normaliseConfig({ platform: 'x' }, logger() as never)).toMatchObject({ detailedSwing: false });
+    expect(normaliseConfig({ platform: 'x', detailedSwing: true } as never, logger() as never))
+      .toMatchObject({ detailedSwing: true });
+  });
+
   it('fills in the defaults' , () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

@@ -527,3 +527,51 @@ describe('explicit fresh status', () => {
     await expect(h.adapter.getStatus(true)).rejects.toThrow('offline');
   });
 });
+
+describe('independent swing axes', () => {
+  it('preserves concurrent axis writes, then turns off only the requested axis', async () => {
+    const h = build();
+    h.applyWrites((body, document) => { document.Wind!.direction = body.Wind.direction; });
+    await Promise.all([h.adapter.setSwingAxis('vertical', true), h.adapter.setSwingAxis('horizontal', true)]);
+    expect(h.document.Wind!.direction).toBe('All');
+    await h.adapter.setSwingAxis('vertical', false);
+    expect(h.document.Wind!.direction).toBe('Left_And_Right');
+    await h.adapter.setSwingAxis('horizontal', false);
+    expect(h.document.Wind!.direction).toBe('Fix');
+  });
+
+  it('reads the current remote state before changing an axis and ignores unknown vocabularies', async () => {
+    const h = build({ cacheMs: 60000 });
+    h.applyWrites((body, document) => { document.Wind!.direction = body.Wind.direction; });
+    await h.adapter.getStatus();
+    h.document.Wind!.direction = 'Left_And_Right';
+    await h.adapter.setSwingAxis('vertical', true);
+    expect(h.document.Wind!.direction).toBe('All');
+    h.document.Wind!.direction = 'Unknown';
+    await expect(h.adapter.setSwingAxis('horizontal', false)).resolves.toMatchObject({ applied: false });
+    expect(h.put).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['Vertical', 'SwingUD'])('ignores unsupported %s without any write', async direction => {
+    const h = build(); h.document.Wind!.direction = direction;
+    await expect(h.adapter.setSwingAxis('vertical', true)).resolves.toMatchObject({ applied: false });
+    expect(h.put).not.toHaveBeenCalled();
+  });
+  it('avoids an already-off axis write after a fresh read', async () => {
+    const h = build(); h.document.Wind!.direction = 'Fix';
+    await expect(h.adapter.setSwingAxis('horizontal', false)).resolves.toMatchObject({ applied: true });
+    expect(h.put).not.toHaveBeenCalled();
+  });
+});
+
+describe('swing changes made elsewhere', () => {
+  it('does not deduplicate a necessary write after the remote resets an axis', async () => {
+    const h = build(); h.document.Wind!.direction = 'Fix';
+    h.applyWrites((body, document) => { document.Wind!.direction = body.Wind.direction; });
+    await h.adapter.setSwingAxis('vertical', true);
+    h.document.Wind!.direction = 'Fix';
+    await h.adapter.setSwingAxis('vertical', true);
+    expect(h.put).toHaveBeenCalledTimes(2);
+    expect(h.document.Wind!.direction).toBe('Up_And_Low');
+  });
+});

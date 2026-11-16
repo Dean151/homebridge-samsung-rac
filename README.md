@@ -35,6 +35,7 @@ A single `HeaterCooler` accessory per unit:
 | Mode | `Mode.modes`, plus `WarmCapa` to tell whether the unit can heat |
 | Fan speed | `Wind.speedLevel` / `Wind.maxSpeedLevel` |
 | Swing | `Wind.direction` |
+| Independent vertical/horizontal swing | `Wind.direction`, as switches you ask for |
 | Filter indicator | the `FilterAlarm` entry in `Alarms` |
 | Filter life | `FilterTime` against `FilterAlarmTime`, as a percentage |
 | Outdoor temperature | `Mode.options.OutdoorTemp`, as its own sensor |
@@ -162,6 +163,19 @@ right about the other.
 
 A service only appears once the unit has actually published a reading for it, and
 is never withdrawn afterwards — some units publish nothing until they are running.
+
+### Independent swing axes
+
+Set `"detailedSwing": true` to add Vertical swing and Horizontal swing switches.
+Changing one axis preserves the other; the main Swing control keeps working as
+before. The switches appear when the unit reports `Fix`, `Up_And_Low`,
+`Left_And_Right` or `All`. Unknown directions, including `Vertical` and `SwingUD`,
+are left alone. Names chosen in the Home app are preserved.
+
+The switches follow what the unit actually applies, confirmed by read-back. On
+units without a horizontal vane, such as the TP6X_RAC_16K, the Horizontal switch
+will not stay on. Vertical swing still works, and trying Horizontal while
+vertical swing is running leaves it running.
 
 ### Auto Clean, Purify and Good Sleep
 

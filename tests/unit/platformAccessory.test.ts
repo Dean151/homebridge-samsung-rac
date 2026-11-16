@@ -82,6 +82,7 @@ async function build(options: {
     setAutoClean: jest.fn(applied('On')),
     setSpi: jest.fn(applied('On')),
     setGoodSleep: jest.fn(applied('Sleep')),
+    setSwingAxis: jest.fn(applied('All')),
     close: jest.fn(),
   };
 
@@ -268,6 +269,54 @@ describe('SamsungRacAccessory', () => {
       const h = await build({ settings, status: { ...status, model: 'TP6X_RAC_16K' } });
       expect(on(h.accessory, 'good-sleep')).toBeDefined();
       h.stop();
+    });
+
+  });
+
+  describe('detailed swing switches', () => {
+    it('preserves an existing custom name matching a former fork label', async () => {
+      const accessory = new FakeAccessory(); accessory.context.serviceNames = { 'swing-vertical': 'Swing Up Down' };
+      const h = await build({ accessory, settings: { detailedSwing: true } });
+      expect(accessory.getServiceById(Service.Switch, 'swing-vertical')?.getCharacteristic(Characteristic.ConfiguredName).value)
+        .toBe('Swing Up Down'); h.stop();
+    });
+    it('skips a redundant scene Off but retains Off queued behind an in-flight On', async () => {
+      const h = await build({ settings: { detailedSwing: true }, status: { windDirection: 'Fix' } });
+      const control = h.accessory.getServiceById(Service.Switch, 'swing-vertical')!.getCharacteristic(Characteristic.On);
+      await control.setHandler?.(false);
+      expect(h.adapter.setSwingAxis).not.toHaveBeenCalled();
+      let finish!: (result: unknown) => void;
+      h.adapter.setSwingAxis.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const pending = control.setHandler?.(true);
+      await control.setHandler?.(false);
+      expect(h.adapter.setSwingAxis.mock.calls.map(call => call[1])).toEqual([true, false]);
+      finish({ applied: true, status: { ...baseStatus, windDirection: 'Up_And_Low' } });
+      await pending; h.stop();
+    });
+
+    const on = (accessory: FakeAccessory, subtype: string) =>
+      accessory.getServiceById(Service.Switch, subtype)?.getCharacteristic(Characteristic.On);
+
+    it('keeps both axes on for All, reflects the remote and writes axes independently', async () => {
+      const h = await build({ settings: { detailedSwing: true }, status: { windDirection: 'All' } });
+      expect(on(h.accessory, 'swing-vertical')?.getHandler?.()).toBe(true);
+      expect(on(h.accessory, 'swing-horizontal')?.getHandler?.()).toBe(true);
+      await on(h.accessory, 'swing-vertical')?.setHandler?.(false);
+      expect(h.adapter.setSwingAxis).toHaveBeenCalledWith('vertical', false);
+      h.setStatus({ windDirection: 'Left_And_Right' });
+      await pollOnce(h.adapter.getStatus);
+      expect(on(h.accessory, 'swing-vertical')?.value).toBe(false);
+      expect(on(h.accessory, 'swing-horizontal')?.value).toBe(true);
+      expect(h.heaterCooler.getCharacteristic(Characteristic.SwingMode).value).toBe(1);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+    });
+
+    it('removes disabled optional switches without disturbing the main AC', async () => {
+      const h = await build({ settings: { detailedSwing: true }, status: { options: { Spi: 'Off' } } });
+      await build({ accessory: h.accessory });
+      expect(on(h.accessory, 'swing-vertical')).toBeUndefined();
+      expect(on(h.accessory, 'swing-horizontal')).toBeUndefined();
+      expect(h.accessory.getService(Service.HeaterCooler)).toBe(h.heaterCooler);
     });
 
   });
