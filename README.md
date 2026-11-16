@@ -40,6 +40,9 @@ A single `HeaterCooler` accessory per unit:
 | Outdoor temperature | `Mode.options.OutdoorTemp`, as its own sensor |
 | Convenience modes | `Mode.options.Comode`, as switches you ask for |
 | Dry and fan-only | `Mode.modes`, as switches you ask for |
+| Auto Clean | `Mode.options.Autoclean`, as a switch you ask for |
+| Purify | `Mode.options.Spi`, as a switch you ask for |
+| Good Sleep | `Mode.options.Sleep` with `Comode_Sleep`, as a switch you ask for |
 
 Dry and fan-only modes have no HomeKit equivalent. The plugin reports them as
 Auto/Idle and leaves them alone rather than overwriting a mode you chose in the
@@ -68,75 +71,6 @@ TP6X_RAC_16K applies `Comfort`, `Quiet`, `Speed`, `Smart`, `2Step` and `Sleep`,
 confirmed by read-back; `WindFree` and `SoftCool` are not names it knows, so one
 of those six is what it calls WindFree. Which one is stated nowhere — try them,
 and name the one that turns out to be it.
-
-### Hide duplicate outdoor sensors
-
-Set `"hideOutdoorTemperature": true` on individual entries in `devices` to hide
-those ACs' outdoor sensors. Other units retain the platform's linked/separate
-placement and temperature scale. For a multisplit, keep one unit's sensor visible
-and hide the duplicates. This does not combine readings across ACs or create a
-new accessory. Cached hidden sensors are removed once all units are reachable;
-the AC tiles and their identities remain unchanged.
-
-### Auto Clean
-
-Set `"autoClean": {"enabled": true, "name": "Auto Clean"}` to expose the switch
-when the unit reports its setting. Omit `name` to use the AC name followed by
-Auto Clean; names chosen later in Apple Home are preserved. Omit `autoClean` or
-set `enabled` to false to disable it. A hand-written `{"name": "..."}` also
-enables it.
-
-The switch reports the enabled self-drying setting, including while the AC is
-off; it does not mean cleaning is in progress. Changes are confirmed by
-read-back. If firmware ignores a change while the unit is off, a warning asks
-you to turn it on first. Changes from the remote/app are included in the debug
-status log.
-
-### Purify
-
-Set `"purify": {"enabled": true, "name": "Purify"}` to expose the switch
-when the unit reports its setting. Omit `name` to use the AC name followed by
-Purify; names chosen later in Apple Home are preserved. Omit `purify` or set
-`enabled` to false to disable it. A hand-written `{"name": "..."}` also enables
-it.
-
-The switch reports the retained SPI setting, including while the AC is off.
-Naming and availability vary by model; this does not measure purification
-effectiveness. Changes are confirmed by read-back. If firmware ignores a change
-while the unit is off, a warning asks you to turn it on first. Changes from the
-remote/app are included in the debug status log.
-
-### Native Good Sleep
-
-Set `"goodSleep": {"enabled": true, "name": "Good Sleep", "minutes": 60}` to add
-one Good Sleep switch. The native off delay is `60` minutes by default; `120`
-selects two hours. Omit `name` to use the AC name followed by Good Sleep; names
-chosen later in Apple Home are preserved. Omit `goodSleep` or set `enabled` to
-false to disable it. A hand-written `{"name": "...", "minutes": 120}` also enables it.
-
-Turning the switch on programs the AC's Good Sleep mode and duration. It is
-available on any model reporting a numeric `Sleep` option, but only
-TP6X_RAC_17K has been verified. Start with the unit running in Cool mode.
-The switch also reflects sleep started from the Samsung app.
-
-**Enabling Good Sleep removes an existing Sleep convenience switch from Home,
-along with any automations that use it.** Recreate those automations using the
-new Good Sleep switch. Disabling Good Sleep restores a configured Sleep
-convenience switch, but does not restore its previous automations.
-
-`Sleep_N` uses 30-minute steps on the tested units. Starting stages the duration,
-selects `Comode_Sleep`, then reapplies the duration. Cancelling uses `Comode_Off`
-and verifies power remains unchanged; `Sleep_0` is never sent because it powers
-off the tested units. A complete cycle/automatic expiry remains unobserved.
-
-The sequence uses the existing write queue so other controls cannot split it;
-polling and ordinary duplicate-write rules are unchanged. A failed write stops
-the sequence and triggers a fresh read. The switch is corrected to the observed
-state and a warning includes the failed step and current state. If that read
-also fails, the state is reported unknown. A lost response can follow an applied
-write, so neither replay nor a speculative rollback is attempted. On a second-step
-failure a staged duration may remain; after entering Sleep, a later failure may
-leave Sleep running. Check the displayed state or the AC in either case.
 
 ### Naming the switches
 
@@ -193,6 +127,12 @@ room; `outdoorTemperature: "separate"` gives it an accessory of its own instead,
 so the Home app will let you assign it wherever it belongs — an outdoor room, or
 the one you actually look at. `off` hides it.
 
+On a multisplit, every indoor unit reports the same outdoor sensor, so each room
+gets an identical tile. `hideOutdoorTemperature: true` on one entry in `devices`
+hides that unit's sensor and leaves the others alone: keep it on one unit, hide
+it on the rest. The air conditioner tiles are untouched, and a hidden sensor's
+tile is removed once every unit has answered.
+
 **Which scale it is in is stated nowhere**, and is independent of the unit's own
 setting: the reference unit reports itself in Celsius and this in Fahrenheit, in
 the same document, with only the former labelled. Fahrenheit is the default for
@@ -223,6 +163,50 @@ right about the other.
 A service only appears once the unit has actually published a reading for it, and
 is never withdrawn afterwards — some units publish nothing until they are running.
 
+### Auto Clean, Purify and Good Sleep
+
+Three more switches, each off until you ask for it, and each taking a name the
+same way:
+
+```json
+"autoClean": { "enabled": true },
+"purify": { "enabled": true, "name": "Ioniser" },
+"goodSleep": { "enabled": true, "minutes": 120 }
+```
+
+Without a name, a switch reads `<air conditioner> Auto Clean` and so on. A name
+set in the Home app still wins, as with the other switches.
+
+**Auto Clean** is the unit's self-drying run after it switches off. The switch
+shows whether that setting is on, not whether a run is happening right now, so
+it keeps reading the setting while the unit is off.
+
+**Purify** is the unit's `Spi` setting, which Samsung calls different things in
+different places — name it after whatever your remote says. It only appears on a
+unit that reports the setting, and says whether it is on, not how well anything
+is being purified.
+
+Both are confirmed by read-back like every other write. A unit that is off can
+ignore the change; when it does, the log says to turn it on first.
+
+**Good Sleep** is the unit's own sleep mode with a built-in off delay: one hour,
+or two with `"minutes": 120`. The unit runs the countdown, so it keeps going
+whether or not Homebridge does. It needs the unit running in Cool to start. It is
+offered on any unit that reports a numeric `Sleep` option, but has only been
+confirmed on a TP6X_RAC_17K, and nobody has yet watched a full cycle end in the
+unit switching itself off.
+
+**Turning Good Sleep on removes a `Sleep` switch from `convenienceModes`, and any
+automation that uses it.** The two control the same mode, so only one stays.
+Disabling `goodSleep` again brings the switch back, but not its automations.
+
+Starting it takes three writes — the duration, then `Comode_Sleep`, then the
+duration again, because the first does not show until the mode is active.
+`Sleep` counts in 30-minute steps. If a write fails part-way, the plugin stops,
+reads what the unit is actually doing, shows that in the Home app and says so in
+the log; it never resends a write that may already have landed. Cancelling sends
+`Comode_Off`, never `Sleep_0`, which switches the tested units off.
+
 ## Setup
 
 1. Install the plugin and open its settings in the Homebridge UI.
@@ -242,28 +226,24 @@ is never withdrawn afterwards — some units publish nothing until they are runn
 
 The token is stored alongside the certificate, outside `config.json`.
 
-### Address discovery
+### When the unit's address changes
 
-After pairing, the plugin automatically reads `deviceUuid` from its stored pairing
-record. No UUID configuration field is needed. Keep the configured `host` as the
-pairing-record key and last-known-address hint. Units configured only with a token,
-without a stored UUID, keep the fixed-address behavior.
+Pairing records the unit's UUID, and the plugin uses it to look for the unit
+when its address stops answering. Each reconnect tries the last address straight
+away and sends an SSDP search alongside it; only if the last address fails and
+the search found the unit somewhere else does it try there. Either way, the unit
+has to identify itself through the authenticated API before anything is sent to
+it, and a write that may already have landed is never sent again. A unit that is
+unreachable when Homebridge starts is retried every 30 seconds, without a
+restart.
 
-Each connection attempt tries the last-known address immediately, alongside a
-bounded SSDP search. A working address does not wait for multicast. If it fails,
-the plugin can try a different address found by the search. Only searches are
-throttled for 30 seconds; requests can retry the known address during that time.
-The authenticated API must identify the paired device before any control is sent;
-sibling documents may have different UUIDs. Uncertain writes are never replayed.
-Offline paired units retry startup every 30 seconds and retain their cached
-HomeKit identities.
+Whether it works depends on the model. Three TP6X_RAC_17K units answered the
+search in one recorded scan; in testing, the reference unit only answered a
+search sent to its own address — which is no use once that address has changed. So reserve the address in your router
+anyway, and treat discovery as a backup.
 
-Multicast support is model/network dependent. A saved multicast-only verification
-on 2026-11-04 discovered all three tested TP6X_RAC_17K units without unicast hints
-or device writes. That is one successful recorded round, not a reliability study.
-The maintainer's TP6X_RAC_16K answered unicast but not multicast in testing. Unicast
-to a last-known address cannot recover a unit that moved when multicast is silent;
-use a DHCP reservation in that case. No 16K multicast support is claimed.
+A unit with no pairing record — its token pasted into `config.json` — has no
+recorded UUID, and stays on its configured address.
 
 ### If pairing never completes
 
@@ -376,8 +356,10 @@ Measured on a TP6X_RAC_16K, 2026-09-15:
 | Sleep timer (`Sleep`) | not applied |
 | `Mode.options` body | one entry at a time — `{"Mode":{"options":["Comode_Quiet"]}}`. The whole array echoed back is rejected |
 
-The last three rows are **not in the Home app yet**: `HeaterCooler` has nowhere
-to put a convenience mode, so exposing it needs an accessory of its own.
+Convenience modes and auto-clean are switches in the Home app now. The sleep
+timer row is explained by what a TP6X_RAC_17K showed later: `Sleep` counts in
+30-minute steps, so `30` asked for fifteen hours. Whether this unit takes a
+smaller value, as Good Sleep sends, has not been tried.
 
 Consequence worth knowing: **changing anything in the Home app while the unit is
 off does nothing**, and the tile will snap back after a second. Turn it on first.
@@ -401,7 +383,10 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
   "outdoorTemperature": "linked",
   "outdoorTemperatureUnit": "fahrenheit",
   "hideOutdoorTemperatureWhenOff": false,
-  "freezeIndoorTemperatureWhenOff": false
+  "freezeIndoorTemperatureWhenOff": false,
+  "autoClean": { "enabled": true },
+  "purify": { "enabled": true, "name": "Purify" },
+  "goodSleep": { "enabled": true, "minutes": 60 }
 }
 ```
 
@@ -410,6 +395,7 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `devices[].host` | — | The unit's IP address. Required. |
 | `devices[].name` | the unit's own name | Shown in the Home app. |
 | `devices[].token` | — | Only if you paired outside this plugin. |
+| `devices[].hideOutdoorTemperature` | `false` | Hide this unit's outdoor sensor, for a multisplit where every unit reports the same one. |
 | `devices[].heating` | `auto` | `on` or `off` to override whether Heat is offered. `auto` reads it from the unit, which is right for every unit seen so far. |
 | `updateInterval` | `10` | Seconds between polls; minimum 5. |
 | `swingDirection` | `Up_And_Low` | What to set the vane to for "swing on". Units differ; the log says if yours ignores it. |
@@ -419,6 +405,9 @@ Everything is editable in the Homebridge UI. The equivalent `config.json`:
 | `outdoorTemperatureUnit` | `fahrenheit` | The scale that sensor reports in. Not the same setting as the unit's own scale. |
 | `hideOutdoorTemperatureWhenOff` | `false` | Stop reporting the outdoor tile while the unit is off, for units whose reading is only trustworthy when running. |
 | `freezeIndoorTemperatureWhenOff` | `false` | Hold the room temperature at its last running value while the unit is off, for units whose reading is only trustworthy when running. |
+| `autoClean` | off | `{ "enabled": true, "name": "…" }` for an Auto Clean switch; `name` is optional. |
+| `purify` | off | The same, for a Purify (`Spi`) switch. |
+| `goodSleep` | off | The same, plus `minutes`: `60` (default) or `120`, the off delay. |
 | `requestTimeout` | `5` | Seconds. |
 | `certificateUrl` | community URL | Only if you mirror the certificate yourself. |
 
