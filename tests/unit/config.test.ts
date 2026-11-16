@@ -33,6 +33,27 @@ describe('normaliseConfig', () => {
     expect(normaliseConfig({ platform: 'x', purify: [] } as never, logger() as never).purify).toBeNull();
   });
 
+  it('keeps the named Good Sleep switch opt-in and honours explicit disable', () => {
+    const parse = (value: unknown) => normaliseConfig({ platform: 'x', goodSleep: value } as never, logger() as never).goodSleep;
+    for (const value of [undefined, null, false, [], 'Sleep', { enabled: false, minutes: 120 }, { enabled: 'true' }]) {
+      expect(parse(value)).toBeNull();
+    }
+  });
+
+  it('normalises the Good Sleep name and defaults its off delay to one hour', () => {
+    const parse = (value: unknown) => normaliseConfig({ platform: 'x', goodSleep: value } as never, logger() as never).goodSleep;
+    expect(parse({ enabled: true, name: ' Bedtime ' })).toEqual({ name: 'Bedtime', minutes: 60 });
+    expect(parse({ name: 'Night', minutes: 120 })).toEqual({ name: 'Night', minutes: 120 });
+    expect(parse({ enabled: true, name: '  ', minutes: 60 })).toEqual({ name: undefined, minutes: 60 });
+    expect(parse(true)).toEqual({ minutes: 60 });
+  });
+
+  it('rejects unverified Good Sleep off delays', () => {
+    for (const minutes of [0, null, 30, 90, '60', -60]) {
+      expect(normaliseConfig({ platform: 'x', goodSleep: { enabled: true, minutes } } as never, logger() as never).goodSleep).toBeNull();
+    }
+  });
+
   it('fills in the defaults' , () => {
     const settings = normaliseConfig({ platform: 'SamsungRacLocal' }, logger() as never);
     expect(settings).toMatchObject({

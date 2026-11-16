@@ -103,9 +103,9 @@ export class DeviceAdapter {
 
   // --- reads ---------------------------------------------------------------
 
-  async getStatus(): Promise<RacStatus> {
+  async getStatus(fresh = false): Promise<RacStatus> {
     const now = Date.now();
-    if (this.cached && now - this.cachedAt < this.cacheMs) {
+    if (!fresh && this.cached && now - this.cachedAt < this.cacheMs) {
       return this.cached;
     }
 
@@ -135,7 +135,7 @@ export class DeviceAdapter {
       // dropped packet — but only briefly. Past maxStaleMs the caller must see
       // the failure, or a unit that has been unplugged for an hour still shows
       // yesterday's temperature instead of "No Response".
-      if (this.cached && Date.now() - this.cachedAt < this.maxStaleMs) {
+      if (!fresh && this.cached && Date.now() - this.cachedAt < this.maxStaleMs) {
         this.log.debug('Serving cached status after a failed read:', (error as Error).message);
         return this.cached;
       }
@@ -282,6 +282,67 @@ export class DeviceAdapter {
       warnWhenOff: true,
       label: 'Purify',
     });
+  }
+
+  /** Opt-in native sleep mode. Never cancel with Sleep_0: tested units power off. */
+  setGoodSleep(minutes: number | null): Promise<ApplyResult> {
+    if (minutes !== null && minutes !== 60 && minutes !== 120) {
+      return Promise.reject(new Error('Good Sleep supports 60 or 120 minute durations.'));
+    }
+    const change = async (): Promise<ApplyResult> => {
+      const before = await this.getStatus(true);
+      if (!/^\d+$/.test(before.options.Sleep ?? '')) {
+        throw new Error('The unit does not report a native Sleep duration.');
+      }
+      if (minutes !== null && (!before.active || before.mode !== 'Cool')) {
+        throw new Error('Turn the AC on in Cool mode before starting Good Sleep.');
+      }
+      if (minutes === null && before.comode !== 'Sleep') {
+        return { applied: true, requested: false, actual: false, status: before };
+      }
+      const requested = { active: before.active, comode: minutes === null ? 'Off' : 'Sleep',
+        sleep: minutes === null ? '0' : String(minutes / 30) };
+      const tokens = minutes === null ? ['Comode_Off']
+        : [`Sleep_${minutes / 30}`, 'Comode_Sleep', `Sleep_${minutes / 30}`];
+      let failed = false;
+      let completed = 0;
+      // Use the existing WRITE queue only. Background reads and ordinary write deduplication are unchanged.
+      this.lastWrite = null;
+      try {
+        for (const token of tokens) {
+          const remaining = this.minWriteIntervalMs - (Date.now() - this.lastWriteAt);
+          if (remaining > 0) { await delay(remaining); }
+          try {
+            await this.api.put(`/devices/${this.deviceId}/mode`, { Mode: { options: [token] } });
+            completed++;
+          } finally {
+            this.lastWriteAt = Date.now();
+            this.invalidate();
+          }
+          await delay(this.settleMs);
+        }
+      } catch {
+        failed = true;
+        // A lost response may follow an applied write. Never replay or guess a rollback.
+        this.log.warn(`${this.label}: Good Sleep write ${completed + 1}/${tokens.length} failed; reading the actual state.`);
+      }
+      let status: RacStatus;
+      try {
+        status = await this.getStatus(true);
+      } catch (error) {
+        this.log.warn(`${this.label}: Good Sleep state is unknown after ${completed}/${tokens.length} successful write responses; check the AC.`);
+        throw error;
+      }
+      const actual = { active: status.active, comode: status.comode, sleep: status.options.Sleep };
+      const applied = !failed && JSON.stringify(actual) === JSON.stringify(requested);
+      if (!applied) {
+        this.log.warn(`${this.label}: Good Sleep was not confirmed; current state is ${JSON.stringify(actual)}. No further writes were sent.`);
+      }
+      return { applied, requested, actual, status };
+    };
+    const run = this.queue.then(change, change);
+    this.queue = run.catch(() => undefined);
+    return run;
   }
 
   // --- the write path ------------------------------------------------------

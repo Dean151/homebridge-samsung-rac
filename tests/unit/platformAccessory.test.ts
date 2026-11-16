@@ -30,6 +30,7 @@ const baseStatus: RacStatus = {
 };
 
 interface Harness {
+  stop: () => void;
   accessory: FakeAccessory;
   heaterCooler: FakeService;
   adapter: Record<string, jest.Mock>;
@@ -80,6 +81,7 @@ async function build(options: {
     setComode: jest.fn(applied('Quiet')),
     setAutoClean: jest.fn(applied('On')),
     setSpi: jest.fn(applied('On')),
+    setGoodSleep: jest.fn(applied('Sleep')),
     close: jest.fn(),
   };
 
@@ -103,6 +105,7 @@ async function build(options: {
     settings: {
       updateInterval: 3600,
       swingDirection: 'Up_And_Low',
+      goodSleep: null,
       ...options.settings,
       // Tests name modes as plain strings; the real config carries objects, so
       // an entry that wants a custom name can still be written out in full.
@@ -112,11 +115,12 @@ async function build(options: {
     },
   };
 
-  await SamsungRacAccessory.create(
+  const instance = await SamsungRacAccessory.create(
     platform as never, accessory as never, adapter as never, outdoor as never,
   );
 
   return {
+    stop: () => instance.stop(),
     accessory,
     heaterCooler: accessory.getService(Service.HeaterCooler) as FakeService,
     adapter: adapter as unknown as Record<string, jest.Mock>,
@@ -175,6 +179,97 @@ describe('SamsungRacAccessory', () => {
       expect(name().value).toBe('My Home name');
       expect(h.heaterCooler).toBe(accessory.getService(Service.HeaterCooler));
     });
+  });
+
+  describe('native Good Sleep', () => {
+    const get = (a: FakeAccessory, subtype: string) => a.getServiceById(Service.Switch, subtype);
+    const on = (a: FakeAccessory, subtype: string) => get(a, subtype)?.findCharacteristic(Characteristic.On);
+    const settings = { goodSleep: { minutes: 60 }, convenienceModes: ['Nano', '2Step', 'Speed', 'Comfort', 'Quiet', 'Sleep'] };
+    const status = { model: 'TP6X_RAC_17K', options: { Sleep: '0' }, comode: 'Off' };
+
+    it('uses a configured name and duration while preserving later Home renames', async () => {
+      const accessory = new FakeAccessory();
+      const h = await build({ accessory, settings: { ...settings, goodSleep: { name: 'Bedtime', minutes: 120 } }, status });
+      const name = () => get(accessory, 'good-sleep')!.getCharacteristic(Characteristic.ConfiguredName);
+      expect(name().value).toBe('Bedtime');
+      await on(accessory, 'good-sleep')?.setHandler?.(true);
+      expect(h.adapter.setGoodSleep).toHaveBeenCalledWith(120);
+      await name().setHandler?.('My Home name');
+      h.stop();
+      const restarted = await build({ accessory, settings: { ...settings, goodSleep: { name: 'Changed config', minutes: 60 } }, status });
+      expect(name().value).toBe('My Home name');
+      expect(restarted.heaterCooler).toBe(h.heaterCooler);
+      restarted.stop();
+    });
+
+    it('replaces a cached Sleep convenience switch and restores it when Good Sleep is disabled', async () => {
+      const original = await build({ settings: { convenienceModes: ['Sleep'] }, status });
+      const legacy = get(original.accessory, 'comode-sleep');
+      expect(legacy).toBeDefined();
+      original.stop();
+      const enabled = await build({ accessory: original.accessory, settings, status });
+      expect(get(enabled.accessory, 'comode-sleep')).toBeUndefined();
+      expect(get(enabled.accessory, 'good-sleep')).toBeDefined();
+      expect(enabled.heaterCooler).toBe(original.heaterCooler);
+      enabled.stop();
+      const disabled = await build({ accessory: original.accessory, settings: { ...settings, goodSleep: null }, status });
+      expect(get(disabled.accessory, 'good-sleep')).toBeUndefined();
+      expect(get(disabled.accessory, 'comode-sleep')).toBeDefined();
+      expect(get(disabled.accessory, 'comode-sleep')).not.toBe(legacy);
+      disabled.stop();
+    });
+
+    it('publishes one Good Sleep switch without changing preset labels', async () => {
+      const h = await build({ settings, status });
+      expect(get(h.accessory, 'comode-sleep')).toBeUndefined();
+      expect(get(h.accessory, 'comode-nano')?.displayName).toBe('Test AC Nano');
+      expect(get(h.accessory, 'comode-2step')?.displayName).toBe('Test AC 2 Step');
+      expect(get(h.accessory, 'comode-speed')?.displayName).toBe('Test AC Speed');
+      await on(h.accessory, 'good-sleep')?.setHandler?.(true);
+      expect(h.adapter.setGoodSleep).toHaveBeenCalledWith(60);
+      expect(h.adapter.setPower).not.toHaveBeenCalled();
+      expect(h.adapter.setMode).not.toHaveBeenCalled();
+    });
+
+    it('reflects the device mode regardless of duration, and cancels through the safe setter', async () => {
+      const h = await build({ settings, status: { ...status, comode: 'Sleep', options: { Sleep: '4' } } });
+      expect(on(h.accessory, 'good-sleep')?.getHandler?.()).toBe(true);
+      expect(on(h.accessory, 'comode-comfort')?.getHandler?.()).toBe(false);
+      await on(h.accessory, 'good-sleep')?.setHandler?.(false);
+      expect(h.adapter.setGoodSleep).toHaveBeenCalledWith(null);
+      h.setStatus({ comode: 'Comfort', options: { Sleep: '0' } });
+      await pollOnce(h.adapter.getStatus);
+      expect(on(h.accessory, 'good-sleep')?.getHandler?.()).toBe(false);
+      expect(on(h.accessory, 'comode-comfort')?.getHandler?.()).toBe(true);
+      h.adapter.setGoodSleep.mockClear();
+      await on(h.accessory, 'good-sleep')?.setHandler?.(false);
+      expect(h.adapter.setGoodSleep).not.toHaveBeenCalled();
+    });
+
+    it('hides unsupported Good Sleep and removes it when disabled without replacing the AC', async () => {
+      expect(on((await build({ settings })).accessory, 'good-sleep')).toBeUndefined();
+      const h = await build({ settings, status });
+      expect(on(h.accessory, 'good-sleep')).toBeDefined();
+      h.stop();
+      await build({ accessory: h.accessory, status });
+      expect(on(h.accessory, 'good-sleep')).toBeUndefined();
+      expect(h.accessory.getService(Service.HeaterCooler)).toBe(h.heaterCooler);
+    });
+
+    it('preserves deliberately chosen names even when they equal older defaults', async () => {
+      const accessory = new FakeAccessory();
+      accessory.context.serviceNames = { 'mode-wind': 'Fan Only', 'comode-speed': 'Speed' };
+      const h = await build({ accessory, settings: { ...settings, modeSwitches: ['Wind'] }, status });
+      expect(get(accessory, 'mode-wind')?.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Fan Only');
+      expect(get(accessory, 'comode-speed')?.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Speed');
+      h.stop();
+    });
+    it('allows explicit opt-in on other models reporting Sleep', async () => {
+      const h = await build({ settings, status: { ...status, model: 'TP6X_RAC_16K' } });
+      expect(on(h.accessory, 'good-sleep')).toBeDefined();
+      h.stop();
+    });
+
   });
 
   describe('temperature', () => {
@@ -949,14 +1044,14 @@ describe('SamsungRacAccessory', () => {
       });
 
       it('beats the tidied-up label the plugin would otherwise pick', async () => {
-        // Wind reads as 'Fan Only' by default; an explicit name outranks it.
+        // Wind reads as 'Fan' by default; an explicit name outranks it.
         const { accessory } = await build({
           settings: { modeSwitches: [{ value: 'Wind', name: 'Ventilation' }] },
         });
 
         expect(switches(accessory)
           .map((service) => service.findCharacteristic(Characteristic.ConfiguredName)?.value))
-          .not.toContain('Test AC Fan Only');
+          .not.toContain('Test AC Fan');
       });
 
       it('leaves an unnamed entry on the derived name, so two units stay apart', async () => {
