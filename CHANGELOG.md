@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `autoClean`, off by default: a switch for the unit's Auto Clean setting, the
+  self-drying run after it switches off. It shows whether the setting is on,
+  including while the unit is off, and not whether a cleaning run is happening
+  right now. Turn it on with `{ "enabled": true }`, and add a `name` to call it
+  something else in the Home app. Changes are confirmed by read-back. A unit
+  that is off can ignore the change, and when it does, a warning says to turn
+  the unit on first instead of the switch quietly flipping back. Contributed by @m1h4 in
+  #3.
+
+- `purify`, off by default: the same kind of switch for the unit's SPI
+  setting, which Samsung's app calls Purify in some regions and something else
+  in others, hence the `name`. It only appears on a unit that reports the
+  setting at all, and like the Auto Clean switch it says whether the setting is
+  on, not how well anything is being purified. Contributed by @m1h4 in #10.
+
+- `hideOutdoorTemperature` on a single entry in `devices`: hides that unit's
+  outdoor sensor and leaves the others alone. Several indoor units on one
+  outdoor unit all report the same outdoor sensor, so a multisplit used to get
+  one identical tile per room; now one unit can keep it and the rest hide
+  theirs. A hidden sensor's tile is removed once every unit has answered, and
+  the air conditioner tiles themselves are untouched. Contributed by @m1h4 in
+  #11.
+
+### Changed
+
+- The settings screen no longer names the reference unit, a TP6X_RAC_16K. Its
+  advice was written as findings about that one unit, which read like someone
+  else's setup notes on any other model. The advice stays; the measurements
+  behind it are in the README.
+
 ### Fixed
 
 - The outdoor temperature sensor could not show a reading below 0 °C. HAP's
