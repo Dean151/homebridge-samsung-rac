@@ -180,7 +180,6 @@
           }
         }
       },
-
       "purify": {
         "title": "Purify",
         "type": "object",
