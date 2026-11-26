@@ -692,6 +692,19 @@ describe('SamsungRacAccessory', () => {
         .toBe(50);
     });
 
+    it('distinguishes a missing counter from a new or exhausted filter', async () => {
+      const { accessory, adapter, setStatus } = await build({ status: { filterLife: 0 } });
+      const level = accessory.getService(Service.FilterMaintenance)
+        ?.findCharacteristic(Characteristic.FilterLifeLevel);
+      expect(level?.getHandler?.()).toBe(0);
+      setStatus({ filterLife: undefined });
+      await pollOnce(adapter.getStatus);
+      expect(() => level?.getHandler?.()).toThrow(FakeHapStatusError);
+      setStatus({ filterLife: 100 });
+      await pollOnce(adapter.getStatus);
+      expect(level?.getHandler?.()).toBe(100);
+    });
+
     it('leaves the level out for a unit that publishes no hours', async () => {
       const { accessory } = await build();
 
