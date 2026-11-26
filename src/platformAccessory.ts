@@ -975,9 +975,13 @@ export class SamsungRacAccessory {
     return this.filterLife();
   }
 
-  /** 100 rather than 0 when unknown: an invented "replace me now" is worse. */
   private filterLife(): number {
-    return Number.isFinite(this.status.filterLife) ? this.status.filterLife as number : 100;
+    if (!Number.isFinite(this.status.filterLife)) {
+      throw new this.platform.api.hap.HapStatusError(
+        this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE,
+      );
+    }
+    return this.status.filterLife as number;
   }
 
   private getModeSwitch(spec: ModeSwitch): CharacteristicValue {
